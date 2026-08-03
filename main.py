@@ -110,11 +110,12 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     buf.seek(0)
     return buf
 
-# ОКНО ВВОДА ССЫЛКИ НА ЛОГОТИП КОМАНДЫ 1
+# === MODALS ===
+
 class Logo1Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 1"):
     url = discord.ui.TextInput(
-        label="Ссылка на фото (или скопируйте из Discord)", 
-        placeholder="Отправьте лого в чат Discord -> Скопируйте ссылку -> Вставьте сюда", 
+        label="Ссылка на фото (URL)", 
+        placeholder="Отправьте лого в Discord -> Копировать ссылку -> Вставьте сюда", 
         required=True
     )
 
@@ -126,11 +127,10 @@ class Logo1Modal(discord.ui.Modal, title="🛡️ Аватарка Команд�
         self.start_view.logo1_url = self.url.value.strip()
         await interaction.response.send_message("✅ Логотип Команды 1 сохранён!", ephemeral=True)
 
-# ОКНО ВВОДА ССЫЛКИ НА ЛОГОТИП КОМАНДЫ 2
 class Logo2Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 2"):
     url = discord.ui.TextInput(
-        label="Ссылка на фото (или скопируйте из Discord)", 
-        placeholder="Отправьте лого в чат Discord -> Скопируйте ссылку -> Вставьте сюда", 
+        label="Ссылка на фото (URL)", 
+        placeholder="Отправьте лого в Discord -> Копировать ссылку -> Вставьте сюда", 
         required=True
     )
 
@@ -142,34 +142,34 @@ class Logo2Modal(discord.ui.Modal, title="🛡️ Аватарка Команд�
         self.start_view.logo2_url = self.url.value.strip()
         await interaction.response.send_message("✅ Логотип Команды 2 сохранён!", ephemeral=True)
 
-# ОКНО ВВОДА ДАННЫХ МАТЧА
+# ИСПРАВЛЕННОЕ ОКНО: РОВНО 5 ПОЛЕЙ (МАКСИМУМ DISCORD API)
 class MatchDataModal(discord.ui.Modal, title="📊 Статистика матча"):
     team1 = discord.ui.TextInput(label="Название Команды 1", placeholder="например: BAYER 04", required=True)
-    score1 = discord.ui.TextInput(label="Счёт Команды 1", placeholder="2", required=True)
-    events1 = discord.ui.TextInput(label="Авторы голов Команды 1", placeholder="34' Schick, 60' Wirtz", required=False, default="-")
-
     team2 = discord.ui.TextInput(label="Название Команды 2", placeholder="например: VALENCIA", required=True)
-    score2 = discord.ui.TextInput(label="Счёт Команды 2", placeholder="0", required=True)
-    events2 = discord.ui.TextInput(label="Авторы голов Команды 2", placeholder="78' Duro", required=False, default="-")
+    full_score = discord.ui.TextInput(label="Счёт матча (формат 2:0 или 2-0)", placeholder="2:0", required=True)
+    events1 = discord.ui.TextInput(label="Голы Команды 1", placeholder="34' Schick, 60' Wirtz", required=False, default="-")
+    events2 = discord.ui.TextInput(label="Голы Команды 2", placeholder="78' Duro", required=False, default="-")
 
     def __init__(self, start_view):
         super().__init__()
         self.start_view = start_view
 
     async def on_submit(self, interaction: discord.Interaction):
-        try:
-            self.start_view.team1 = self.team1.value.strip()
-            self.start_view.score1 = self.score1.value.strip()
-            self.start_view.events1 = self.events1.value
-            self.start_view.team2 = self.team2.value.strip()
-            self.start_view.score2 = self.score2.value.strip()
-            self.start_view.events2 = self.events2.value
-            await interaction.response.send_message("✅ Статистика матча успешно зафиксирована!", ephemeral=True)
-        except Exception as e:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Ошибка: {e}", ephemeral=True)
+        # Парсим счёт
+        raw_score = self.full_score.value.strip().replace('-', ':').replace(' ', '')
+        if ':' in raw_score:
+            s1, s2 = raw_score.split(':', 1)
+        else:
+            s1, s2 = raw_score, "0"
 
-# ФОРМА ДЛЯ ВВОДА MVP
+        self.start_view.team1 = self.team1.value.strip()
+        self.start_view.team2 = self.team2.value.strip()
+        self.start_view.score1 = s1
+        self.start_view.score2 = s2
+        self.start_view.events1 = self.events1.value
+        self.start_view.events2 = self.events2.value
+        await interaction.response.send_message("✅ Статистика матча зафиксирована!", ephemeral=True)
+
 class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"):
     player_name = discord.ui.TextInput(label="Имя игрока (MVP)", placeholder="например: Pedri", required=True)
     stats = discord.ui.TextInput(label="Статистика игрока", placeholder="например: 1 Гол, 2 Передачи", required=False, default="Лучший игрок встречи")
@@ -185,7 +185,8 @@ class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"
         embed.set_footer(text="Официальное решение RFL League")
         await interaction.followup.send(embed=embed)
 
-# КНОПКИ ПОД ГОТОВОЙ КАРТОЧКОЙ
+# === VIEWS ===
+
 class MatchResultView(discord.ui.View):
     def __init__(self, team1: str, score1: str, team2: str, score2: str, events1: str, events2: str):
         super().__init__(timeout=None)
@@ -217,15 +218,14 @@ class MatchResultView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         embed = discord.Embed(
             title="📊 ТУРНИРНАЯ ТАБЛИЦА RFL",
-            description="Результат матча зафиксирован! Таблица обновляется после завершения тура.\n\nПосмотреть актуальное положение команд можно в канале `#таблица`.",
+            description="Результат матча учтён! Таблица обновляется автоматически после каждого тура.\n\nЗа актуальным положением команд следите в канале `#таблица`.",
             color=discord.Color.green()
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-# СТАРТОВАЯ ПАНЕЛЬ С КНОПКАМИ ПОСЛЕ /result (C CUSTOM_ID ДЛЯ СТАБИЛЬНОСТИ)
 class ResultStartView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=600) 
         self.logo1_url = None
         self.logo2_url = None
         self.team1 = None
@@ -235,19 +235,19 @@ class ResultStartView(discord.ui.View):
         self.score2 = None
         self.events2 = "-"
 
-    @discord.ui.button(label="🛡️ Логотип 1", style=discord.ButtonStyle.secondary, custom_id="btn_start_logo1", row=0)
+    @discord.ui.button(label="🛡️ Логотип 1", style=discord.ButtonStyle.secondary, row=0)
     async def btn_logo1(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(Logo1Modal(self))
 
-    @discord.ui.button(label="🛡️ Логотип 2", style=discord.ButtonStyle.secondary, custom_id="btn_start_logo2", row=0)
+    @discord.ui.button(label="🛡️ Логотип 2", style=discord.ButtonStyle.secondary, row=0)
     async def btn_logo2(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(Logo2Modal(self))
 
-    @discord.ui.button(label="📝 Статистика матча", style=discord.ButtonStyle.primary, custom_id="btn_start_match_data", row=0)
+    @discord.ui.button(label="📝 Статистика матча", style=discord.ButtonStyle.primary, row=0)
     async def btn_match_data(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(MatchDataModal(self))
 
-    @discord.ui.button(label="🚀 Сгенерировать карточку", style=discord.ButtonStyle.success, custom_id="btn_start_generate", row=1)
+    @discord.ui.button(label="🚀 Сгенерировать карточку", style=discord.ButtonStyle.success, row=1)
     async def btn_generate(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.team1 or not self.team2 or not self.score1 or not self.score2:
             await interaction.response.send_message("❌ Сначала заполните данные матча через кнопку **«📝 Статистика матча»**!", ephemeral=True)
@@ -256,7 +256,7 @@ class ResultStartView(discord.ui.View):
         await interaction.response.defer()
 
         try:
-            ai_prompt = "abstract dark moody soccer stadium lights background, blue neon atmosphere, 4k"
+            ai_prompt = "abstract dark moody soccer stadium lights background, blue neon atmosphere, professional sports photography, 4k"
             encoded_prompt = urllib.parse.quote(ai_prompt)
             bg_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true"
 
@@ -292,14 +292,15 @@ class ResultStartView(discord.ui.View):
         except Exception as e:
             await interaction.followup.send(content=f"❌ Ошибка при сборке карточки: `{e}`")
 
-# КОМАНДА /result
+# === BOT EVENTS & COMMANDS ===
+
 @bot.tree.command(name="result", description="Центр управления матчем RFL")
 async def result(interaction: discord.Interaction):
     embed = discord.Embed(
         title="⚽ Центр управления RFL",
         description=(
             "Заполните информацию о прошедшем матче перед публикацией:\n\n"
-            "1️⃣ **`🛡️ Логотип 1`** и **`🛡️ Логотип 2`** — отправьте эмблему в любой чат Discord, скопируйте ссылку на неё и вставьте.\n"
+            "1️⃣ **`🛡️ Логотип`** — отправьте эмблемы в Discord, скопируйте ссылки на них и вставьте.\n"
             "2️⃣ **`📝 Статистика матча`** — введите название команд, счёт и авторов голов.\n"
             "3️⃣ **`🚀 Сгенерировать карточку`** — создаст и отправит готовую карточку в чат!"
         ),
@@ -308,7 +309,6 @@ async def result(interaction: discord.Interaction):
     embed.set_footer(text="RFL Result System v2.0")
     await interaction.response.send_message(embed=embed, view=ResultStartView(), ephemeral=True)
 
-# КОМАНДА /help
 @bot.tree.command(name="help", description="Полная инструкция и возможности RFL Bot")
 async def help_command(interaction: discord.Interaction):
     embed = discord.Embed(
@@ -353,11 +353,11 @@ async def help_command(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     print(f"=== БОТ ЗАПУЩЕН: {bot.user} ===")
-    bot.add_view(ResultStartView())
     try:
-        await bot.tree.sync()
+        synced = await bot.tree.sync()
+        print(f"=== СИНХРОНИЗИРОВАНО КОМАНД: {len(synced)} ===")
     except Exception as e:
-        print(f"Ошибка синхронизации: {e}")
+        print(f"Ошибка синхронизации команд: {e}")
 
 TOKEN = os.getenv("BOT_TOKEN")
 
@@ -365,3 +365,5 @@ if __name__ == "__main__":
     if TOKEN:
         keep_alive()
         bot.run(TOKEN)
+    else:
+        print("ОШИБКА: Переменная BOT_TOKEN не найдена!")
