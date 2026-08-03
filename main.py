@@ -90,7 +90,7 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     # FULL-TIME
     draw.text((width // 2, 715), "FULL-TIME", fill=(234, 179, 8), font=font_status, anchor="mm")
 
-    # Отрисовка логотипов (если они валидны)
+    # Отрисовка логотипов
     if logo1_img:
         l1 = logo1_img.resize((120, 120))
         bg.paste(l1, (200, 570), l1)
@@ -101,7 +101,7 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     # Разделительная линия
     draw.line([(100, 755), (900, 755)], fill=(255, 255, 255, 80), width=2)
 
-    # События по бокам
+    # События
     draw.text((260, 830), events1, fill=(220, 220, 220), font=font_events, anchor="mm")
     draw.text((740, 830), events2, fill=(220, 220, 220), font=font_events, anchor="mm")
 
@@ -110,80 +110,57 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     buf.seek(0)
     return buf
 
-# ФОРМА ВВОДА С ВОЗМОЖНОСТЬЮ ВСТАВИТЬ ССЫЛКИ НА ЛОГОТИПЫ
-class ResultModal(discord.ui.Modal, title="Протокол матча RFL"):
-    team1 = discord.ui.TextInput(label="Команда 1 и Счёт (Формат: Название - Счёт)", placeholder="BAYER 04 - 2", required=True)
-    events1 = discord.ui.TextInput(label="Голы Команды 1", placeholder="34' Schick, 60' Wirtz", required=False, default="-")
-    
-    team2 = discord.ui.TextInput(label="Команда 2 и Счёт (Формат: Название - Счёт)", placeholder="VALENCIA - 0", required=True)
-    events2 = discord.ui.TextInput(label="Голы Команды 2", placeholder="78' Duro", required=False, default="-")
+# ОКНО ВВОДА ЛОГОТИПА КОМАНДЫ 1
+class Logo1Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 1"):
+    url = discord.ui.TextInput(label="Прямая ссылка на логотип (URL)", placeholder="https://...", required=True)
 
-    logos = discord.ui.TextInput(label="Ссылки на логотипы (необязательно)", placeholder="Ссылка1 | Ссылка2 (через знак |)", required=False)
+    def __init__(self, start_view):
+        super().__init__()
+        self.start_view = start_view
 
     async def on_submit(self, interaction: discord.Interaction):
-        # 🔥 МГНОВЕННО отвечаем Discord, чтобы не было ошибки "не ответил вовремя"
-        await interaction.response.defer()
+        self.start_view.logo1_url = self.url.value.strip()
+        await interaction.response.send_message("✅ Ссылка на логотип Команды 1 сохранена!", ephemeral=True)
 
-        try:
-            # Разбор Команды 1
-            if "-" in self.team1.value:
-                t1, s1 = self.team1.value.rsplit("-", 1)
-            else:
-                t1, s1 = self.team1.value, "0"
+# ОКНО ВВОДА ЛОГОТИПА КОМАНДЫ 2
+class Logo2Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 2"):
+    url = discord.ui.TextInput(label="Прямая ссылка на логотип (URL)", placeholder="https://...", required=True)
 
-            # Разбор Команды 2
-            if "-" in self.team2.value:
-                t2, s2 = self.team2.value.rsplit("-", 1)
-            else:
-                t2, s2 = self.team2.value, "0"
+    def __init__(self, start_view):
+        super().__init__()
+        self.start_view = start_view
 
-            # Разбор ссылок на лого
-            logo1_url, logo2_url = None, None
-            if self.logos.value and "|" in self.logos.value:
-                parts = self.logos.value.split("|")
-                logo1_url = parts[0].strip()
-                logo2_url = parts[1].strip()
+    async def on_submit(self, interaction: discord.Interaction):
+        self.start_view.logo2_url = self.url.value.strip()
+        await interaction.response.send_message("✅ Ссылка на логотип Команды 2 сохранена!", ephemeral=True)
 
-            ai_prompt = "abstract dark moody soccer stadium lights background, blue neon atmosphere, 4k"
-            encoded_prompt = urllib.parse.quote(ai_prompt)
-            bg_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true"
+# ОКНО ВВОДА ДАННЫХ МАТЧА
+class MatchDataModal(discord.ui.Modal, title="📊 Статистика матча"):
+    team1 = discord.ui.TextInput(label="Название Команды 1", placeholder="например: BAYER 04", required=True)
+    score1 = discord.ui.TextInput(label="Счёт Команды 1", placeholder="2", required=True)
+    events1 = discord.ui.TextInput(label="Авторы голов Команды 1", placeholder="34' Schick, 60' Wirtz", required=False, default="-")
 
-            bg_img = await fetch_image(bg_url)
-            if not bg_img:
-                bg_img = Image.new("RGBA", (1000, 1000), (15, 23, 42))
+    team2 = discord.ui.TextInput(label="Название Команды 2", placeholder="например: VALENCIA", required=True)
+    score2 = discord.ui.TextInput(label="Счёт Команды 2", placeholder="0", required=True)
+    events2 = discord.ui.TextInput(label="Авторы голов Команды 2", placeholder="78' Duro", required=False, default="-")
 
-            logo1_img = await fetch_image(logo1_url) if logo1_url else None
-            logo2_img = await fetch_image(logo2_url) if logo2_url else None
+    def __init__(self, start_view):
+        super().__init__()
+        self.start_view = start_view
 
-            loop = asyncio.get_running_loop()
-            card_buf = await loop.run_in_executor(
-                None, create_433_style_card, 
-                t1.strip(), s1.strip(), 
-                t2.strip(), s2.strip(), 
-                self.events1.value, self.events2.value, 
-                bg_img, logo1_img, logo2_img
-            )
-
-            file = discord.File(fp=card_buf, filename="rfl_match_result.png")
-            
-            view = MatchResultView(
-                t1.strip(), s1.strip(), 
-                t2.strip(), s2.strip(), 
-                self.events1.value, self.events2.value
-            )
-
-            await interaction.followup.send(
-                content=f"🚨 **RFL MATCH RESULT** | {t1.strip()} vs {t2.strip()}",
-                file=file,
-                view=view
-            )
-        except Exception as e:
-            await interaction.followup.send(content=f"❌ Ошибка при сборке карточки: `{e}`")
+    async def on_submit(self, interaction: discord.Interaction):
+        self.start_view.team1 = self.team1.value.strip()
+        self.start_view.score1 = self.score1.value.strip()
+        self.start_view.events1 = self.events1.value
+        self.start_view.team2 = self.team2.value.strip()
+        self.start_view.score2 = self.score2.value.strip()
+        self.start_view.events2 = self.events2.value
+        await interaction.response.send_message("✅ Статистика матча успешно зафиксирована!", ephemeral=True)
 
 # ФОРМА ДЛЯ ВВОДА MVP
-class MVPModal(discord.ui.Modal, title="Назначение MVP Матча"):
+class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"):
     player_name = discord.ui.TextInput(label="Имя игрока (MVP)", placeholder="например: Pedri", required=True)
-    stats = discord.ui.TextInput(label="Статистика", placeholder="например: 1 Гол, 2 Передачи", required=False, default="Лучший игрок встречи")
+    stats = discord.ui.TextInput(label="Статистика игрока", placeholder="например: 1 Гол, 2 Передачи", required=False, default="Лучший игрок встречи")
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -193,10 +170,10 @@ class MVPModal(discord.ui.Modal, title="Назначение MVP Матча"):
             color=discord.Color.gold()
         )
         embed.add_field(name="📊 Статистика:", value=self.stats.value, inline=False)
-        embed.set_footer(text="Официальное решение RFL")
+        embed.set_footer(text="Официальное решение RFL League")
         await interaction.followup.send(embed=embed)
 
-# ИНТЕРАКТИВНЫЕ КНОПКИ
+# КНОПКИ ПОД ГОТОВОЙ КАРТОЧКОЙ
 class MatchResultView(discord.ui.View):
     def __init__(self, team1: str, score1: str, team2: str, score2: str, events1: str, events2: str):
         super().__init__(timeout=None)
@@ -228,33 +205,138 @@ class MatchResultView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         embed = discord.Embed(
             title="📊 ТУРНИРНАЯ ТАБЛИЦА RFL",
-            description="Результат матча зафиксирован! Таблица обновляется после завершения тура.\n\nПосмотреть положение команд можно в канале `#таблица`.",
+            description="Результат матча зафиксирован! Таблица обновляется после завершения тура.\n\nПосмотреть актуальное положение команд можно в канале `#таблица`.",
             color=discord.Color.green()
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-# СТАРТОВАЯ ПАНЕЛЬ
+# СТАРТОВАЯ ПАНЕЛЬ С КНОПКАМИ ПОСЛЕ /result
 class ResultStartView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        self.logo1_url = None
+        self.logo2_url = None
+        self.team1 = None
+        self.score1 = None
+        self.events1 = "-"
+        self.team2 = None
+        self.score2 = None
+        self.events2 = "-"
 
-    @discord.ui.button(label="📝 Заполнить протокол матча", style=discord.ButtonStyle.success, custom_id="btn_open_modal")
-    async def open_modal_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(ResultModal())
+    @discord.ui.button(label="🛡️ Логотип 1", style=discord.ButtonStyle.secondary, row=0)
+    async def btn_logo1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(Logo1Modal(self))
 
-@bot.tree.command(name="result", description="Открыть панель оформления матча RFL")
+    @discord.ui.button(label="🛡️ Логотип 2", style=discord.ButtonStyle.secondary, row=0)
+    async def btn_logo2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(Logo2Modal(self))
+
+    @discord.ui.button(label="📝 Статистика матча", style=discord.ButtonStyle.primary, row=0)
+    async def btn_match_data(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(MatchDataModal(self))
+
+    @discord.ui.button(label="🚀 Сгенерировать карточку", style=discord.ButtonStyle.success, row=1)
+    async def btn_generate(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.team1 or not self.team2 or not self.score1 or not self.score2:
+            await interaction.response.send_message("❌ Сначала заполните данные матча через кнопку **«📝 Статистика матча»**!", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+
+        try:
+            ai_prompt = "abstract dark moody soccer stadium lights background, blue neon atmosphere, 4k"
+            encoded_prompt = urllib.parse.quote(ai_prompt)
+            bg_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true"
+
+            bg_img = await fetch_image(bg_url)
+            if not bg_img:
+                bg_img = Image.new("RGBA", (1000, 1000), (15, 23, 42))
+
+            logo1_img = await fetch_image(self.logo1_url) if self.logo1_url else None
+            logo2_img = await fetch_image(self.logo2_url) if self.logo2_url else None
+
+            loop = asyncio.get_running_loop()
+            card_buf = await loop.run_in_executor(
+                None, create_433_style_card, 
+                self.team1, self.score1, 
+                self.team2, self.score2, 
+                self.events1, self.events2, 
+                bg_img, logo1_img, logo2_img
+            )
+
+            file = discord.File(fp=card_buf, filename="rfl_match_result.png")
+            
+            view = MatchResultView(
+                self.team1, self.score1, 
+                self.team2, self.score2, 
+                self.events1, self.events2
+            )
+
+            await interaction.followup.send(
+                content=f"🚨 **RFL MATCH RESULT** | {self.team1} vs {self.team2}",
+                file=file,
+                view=view
+            )
+        except Exception as e:
+            await interaction.followup.send(content=f"❌ Ошибка при сборке карточки: `{e}`")
+
+# КОМАНДА /result - ЧИСТАЯ, БЕЗ АРГУМЕНТОВ
+@bot.tree.command(name="result", description="Центр управления матчем RFL")
 async def result(interaction: discord.Interaction):
-    # Защита от таймаута для вызова меню
     embed = discord.Embed(
         title="⚽ Центр управления RFL",
-        description="Нажмите кнопку ниже, чтобы открыть форму протокола.",
+        description=(
+            "Заполните информацию о прошедшем матче перед публикацией:\n\n"
+            "1️⃣ **`🛡️ Логотип 1`** и **`🛡️ Логотип 2`** — вставьте ссылки на эмблемы (необязательно).\n"
+            "2️⃣ **`📝 Статистика матча`** — введите название команд, счёт и авторов голов.\n"
+            "3️⃣ **`🚀 Сгенерировать карточку`** — создаст и отправит готовую карточку в чат!"
+        ),
         color=discord.Color.blue()
     )
+    embed.set_footer(text="RFL Result System v2.0")
     await interaction.response.send_message(embed=embed, view=ResultStartView(), ephemeral=True)
 
-@bot.tree.command(name="help", description="Помощь по боту")
+# СОЧНАЯ И ЖИВАЯ КОМАНДА /help
+@bot.tree.command(name="help", description="Полная инструкция и возможности RFL Bot")
 async def help_command(interaction: discord.Interaction):
-    await interaction.response.send_message("Используйте `/result` для запуска формы карточки.", ephemeral=True)
+    embed = discord.Embed(
+        title="🤖 Помощник RFL League Bot",
+        description="Добро пожаловать! Этот бот предназначен для стильного оформления результатов футбольных матчей лига RFL.",
+        color=discord.Color.gold()
+    )
+    
+    embed.add_field(
+        name="🎮 Основные команды:",
+        value=(
+            "• `/result` — Открывает интерактивное меню оформления матча.\n"
+            "• `/help` — Показывает это меню с справкой."
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🛠️ Как опубликовать матч?",
+        value=(
+            "1. Введите команду `/result`.\n"
+            "2. (Опционально) Нажмите кнопки **`🛡️ Логотип`** и вставьте URL эмблем.\n"
+            "3. Нажмите **`📝 Статистика матча`**, чтобы указать клубы, счёт и авторов голов.\n"
+            "4. Жмите **`🚀 Сгенерировать карточку`** — бот сделает крутую картинку!"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="📌 Кнопки под готовой карточкой:",
+        value=(
+            "• **📋 Протокол** — показывает детализацию по забитым голам.\n"
+            "• **⭐ MVP Матча** — открывает форму для голосования/выбора лучшего игрока.\n"
+            "• **📊 Таблица** — отправляет статус турнирного положения."
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text="Создано специально для лиги RFL ⚽")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.event
 async def on_ready():
