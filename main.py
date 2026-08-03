@@ -110,9 +110,13 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     buf.seek(0)
     return buf
 
-# ОКНО ВВОДА ЛОГОТИПА КОМАНДЫ 1
+# ОКНО ВВОДА ССЫЛКИ НА ЛОГОТИП КОМАНДЫ 1
 class Logo1Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 1"):
-    url = discord.ui.TextInput(label="Прямая ссылка на логотип (URL)", placeholder="https://...", required=True)
+    url = discord.ui.TextInput(
+        label="Ссылка на фото (или скопируйте из Discord)", 
+        placeholder="Отправьте лого в чат Discord -> Скопируйте ссылку -> Вставьте сюда", 
+        required=True
+    )
 
     def __init__(self, start_view):
         super().__init__()
@@ -120,11 +124,15 @@ class Logo1Modal(discord.ui.Modal, title="🛡️ Аватарка Команд�
 
     async def on_submit(self, interaction: discord.Interaction):
         self.start_view.logo1_url = self.url.value.strip()
-        await interaction.response.send_message("✅ Ссылка на логотип Команды 1 сохранена!", ephemeral=True)
+        await interaction.response.send_message("✅ Логотип Команды 1 сохранён!", ephemeral=True)
 
-# ОКНО ВВОДА ЛОГОТИПА КОМАНДЫ 2
+# ОКНО ВВОДА ССЫЛКИ НА ЛОГОТИП КОМАНДЫ 2
 class Logo2Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 2"):
-    url = discord.ui.TextInput(label="Прямая ссылка на логотип (URL)", placeholder="https://...", required=True)
+    url = discord.ui.TextInput(
+        label="Ссылка на фото (или скопируйте из Discord)", 
+        placeholder="Отправьте лого в чат Discord -> Скопируйте ссылку -> Вставьте сюда", 
+        required=True
+    )
 
     def __init__(self, start_view):
         super().__init__()
@@ -132,7 +140,7 @@ class Logo2Modal(discord.ui.Modal, title="🛡️ Аватарка Команд�
 
     async def on_submit(self, interaction: discord.Interaction):
         self.start_view.logo2_url = self.url.value.strip()
-        await interaction.response.send_message("✅ Ссылка на логотип Команды 2 сохранена!", ephemeral=True)
+        await interaction.response.send_message("✅ Логотип Команды 2 сохранён!", ephemeral=True)
 
 # ОКНО ВВОДА ДАННЫХ МАТЧА
 class MatchDataModal(discord.ui.Modal, title="📊 Статистика матча"):
@@ -176,7 +184,7 @@ class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"
 # КНОПКИ ПОД ГОТОВОЙ КАРТОЧКОЙ
 class MatchResultView(discord.ui.View):
     def __init__(self, team1: str, score1: str, team2: str, score2: str, events1: str, events2: str):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None) # Вечное меню
         self.team1 = team1
         self.score1 = score1
         self.team2 = team2
@@ -210,10 +218,10 @@ class MatchResultView(discord.ui.View):
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-# СТАРТОВАЯ ПАНЕЛЬ С КНОПКАМИ ПОСЛЕ /result
+# СТАРТОВАЯ ПАНЕЛЬ С КНОПКАМИ ПОСЛЕ /result (ВЕЧНАЯ И БЕЗ ТАЙМАУТА)
 class ResultStartView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None) # timeout=None гарантирует, что кнопки не выключаются
         self.logo1_url = None
         self.logo2_url = None
         self.team1 = None
@@ -241,6 +249,7 @@ class ResultStartView(discord.ui.View):
             await interaction.response.send_message("❌ Сначала заполните данные матча через кнопку **«📝 Статистика матча»**!", ephemeral=True)
             return
 
+        # Мгновенно сообщаем Discord о начале генерации (фикс ошибки "не ответил вовремя")
         await interaction.response.defer()
 
         try:
@@ -280,14 +289,14 @@ class ResultStartView(discord.ui.View):
         except Exception as e:
             await interaction.followup.send(content=f"❌ Ошибка при сборке карточки: `{e}`")
 
-# КОМАНДА /result - ЧИСТАЯ, БЕЗ АРГУМЕНТОВ
+# КОМАНДА /result
 @bot.tree.command(name="result", description="Центр управления матчем RFL")
 async def result(interaction: discord.Interaction):
     embed = discord.Embed(
         title="⚽ Центр управления RFL",
         description=(
             "Заполните информацию о прошедшем матче перед публикацией:\n\n"
-            "1️⃣ **`🛡️ Логотип 1`** и **`🛡️ Логотип 2`** — вставьте ссылки на эмблемы (необязательно).\n"
+            "1️⃣ **`🛡️ Логотип 1`** и **`🛡️ Логотип 2`** — отправьте эмблему в любой чат Discord, скопируйте ссылку на неё и вставьте.\n"
             "2️⃣ **`📝 Статистика матча`** — введите название команд, счёт и авторов голов.\n"
             "3️⃣ **`🚀 Сгенерировать карточку`** — создаст и отправит готовую карточку в чат!"
         ),
@@ -296,12 +305,12 @@ async def result(interaction: discord.Interaction):
     embed.set_footer(text="RFL Result System v2.0")
     await interaction.response.send_message(embed=embed, view=ResultStartView(), ephemeral=True)
 
-# СОЧНАЯ И ЖИВАЯ КОМАНДА /help
+# КОМАНДА /help
 @bot.tree.command(name="help", description="Полная инструкция и возможности RFL Bot")
 async def help_command(interaction: discord.Interaction):
     embed = discord.Embed(
         title="🤖 Помощник RFL League Bot",
-        description="Добро пожаловать! Этот бот предназначен для стильного оформления результатов футбольных матчей лига RFL.",
+        description="Добро пожаловать! Этот бот предназначен для стильного оформления результатов футбольных матчей лиги RFL.",
         color=discord.Color.gold()
     )
     
@@ -318,7 +327,7 @@ async def help_command(interaction: discord.Interaction):
         name="🛠️ Как опубликовать матч?",
         value=(
             "1. Введите команду `/result`.\n"
-            "2. (Опционально) Нажмите кнопки **`🛡️ Логотип`** и вставьте URL эмблем.\n"
+            "2. (Опционально) Нажмите кнопки **`🛡️ Логотип`** и вставьте ссылку на эмблему.\n"
             "3. Нажмите **`📝 Статистика матча`**, чтобы указать клубы, счёт и авторов голов.\n"
             "4. Жмите **`🚀 Сгенерировать карточку`** — бот сделает крутую картинку!"
         ),
