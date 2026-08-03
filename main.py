@@ -1,102 +1,122 @@
 import os
 import io
+import asyncio
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
-import asyncio
-
-# Импортируем твою функцию генерации из card_maker.py
-try:
-    from card_maker import create_match_card
-except ImportError:
-    # Заглушка, если функции в card_maker еще нет
-    def create_match_card(team1, score1, team2, score2, events, logo1_url=None, logo2_url=None):
-        return None
+from PIL import Image, ImageDraw, ImageFont
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-class MatchResultModal(discord.ui.Modal, title="Ввод результата матча RFL"):
-    team1_input = discord.ui.TextInput(
-        label="Команда 1 и счёт",
-        placeholder="Например: Реал Мадрид 2",
-        required=True
-    )
-    team2_input = discord.ui.TextInput(
-        label="Команда 2 и счёт",
-        placeholder="Например: Барселона 1",
-        required=True
-    )
-    logo_urls = discord.ui.TextInput(
-        label="Ссылки на логотипы (необязательно)",
-        placeholder="URL_Команды_1 | URL_Команды_2 (через знак |)",
-        required=False,
-        style=discord.TextStyle.paragraph
-    )
-    events_input = discord.ui.TextInput(
-        label="Авторы голов / События матча",
-        placeholder="Например: 15' Бензема, 70' Винисиус — 40' Месси",
-        style=discord.TextStyle.paragraph,
-        required=False
-    )
+# Функция для скачивания изображения по URL
+async def download_image(url: str) -> Image.Image:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status == 200:
+                data = await response.read()
+                return Image.open(io.BytesIO(data)).convert("RGBA")
+    return None
 
-    async def on_submit(self, interaction: discord.Interaction):
-        # Оповещаем Discord, что мы приняли запрос и обрабатываем его (чтобы не было таймаута)
-        await interaction.response.defer(thinking=True)
+# Генерация красивой карточки с помощью Pillow
+def generate_card(team1_name: str, score1: str, team2_name: str, score2: str, 
+                  details: str, logo1_img: Image.Image = None, logo2_img: Image.Image = None) -> io.BytesIO:
+    
+    # Создаём холст 1200x675 (стандартное соотношение 16:9)
+    width, height = 1200, 675
+    img = Image.new("RGBA", (width, height), (15, 23, 42, 255)) # Темно-синий/углистый фон
+    draw = ImageDraw.Draw(img)
 
-        try:
-            # Разбираем ввод команд
-            t1_val = self.team1_input.value.strip().rsplit(' ', 1)
-            t2_val = self.team2_input.value.strip().rsplit(' ', 1)
+    # Рисуем стильную рамку и градиентные акценты
+    draw.rectangle([(20, 20), (width - 20, height - 20)], outline=(56, 189, 248), width=3)
+    draw.rectangle([(25, 25), (width - 25, 100)], fill=(30, 41, 59))
+    
+    # Заголовок RFL
+    draw.text((width // 2, 60), "RFL MATCH RESULT", fill=(255, 255, 255), anchor="mm")
 
-            team1 = t1_val[0] if len(t1_val) > 0 else "Команда 1"
-            score1 = t1_val[1] if len(t1_val) > 1 else "0"
+    # Карточки Команды 1 и Команды 2
+    # Зелёный блок слева, Красный/Оранжевый справа
+    draw.rounded_rectangle([(50, 130), (560, 480)], radius=15, fill=(22, 101, 52, 220), outline=(34, 197, 94), width=2)
+    draw.rounded_rectangle([(640, 130), (1150, 480)], radius=15, fill=(153, 27, 27, 220), outline=(239, 68, 68), width=2)
 
-            team2 = t2_val[0] if len(t2_val) > 0 else "Команда 2"
-            score2 = t2_val[1] if len(t2_val) > 1 else "0"
+    # Отрисовка Логотипа 1
+    if logo1_img:
+        logo1_img.thumbnail((120, 120))
+        img.paste(logo1_img, (90, 150), logo1_img)
+    
+    # Отрисовка Логотипа 2
+    if logo2_img:
+        logo2_img.thumbnail((120, 120))
+        img.paste(logo2_img, (680, 150), logo2_img)
 
-            # Ссылки на логотипы
-            logo1, logo2 = None, None
-            if self.logo_urls.value:
-                parts = self.logo_urls.value.split('|')
-                logo1 = parts[0].strip() if len(parts) > 0 else None
-                logo2 = parts[1].strip() if len(parts) > 1 else None
+    # Названия команд и счёт
+    draw.text((320, 180), team1_name.upper(), fill=(255, 255, 255), anchor="mm")
+    draw.text((320, 260), str(score1), fill=(255, 255, 255), anchor="mm")
 
-            events = self.events_input.value or "Без событий"
+    draw.text((910, 180), team2_name.upper(), fill=(255, 255, 255), anchor="mm")
+    draw.text((910, 260), str(score2), fill=(255, 255, 255), anchor="mm")
 
-            # Запускаем генерацию карточки в отдельном потоке, чтобы не блокировать бота
-            loop = asyncio.get_running_loop()
-            img_bytes = await loop.run_in_executor(
-                None, 
-                create_match_card, 
-                team1, score1, team2, score2, events, logo1, logo2
-            )
+    # Линия разделения и авторы голов
+    draw.line([(70, 320), (540, 320)], fill=(34, 197, 94), width=2)
+    draw.line([(660, 320), (1130, 320)], fill=(239, 68, 68), width=2)
 
-            if img_bytes:
-                file = discord.File(fp=img_bytes, filename="result.png")
-                await interaction.followup.send(
-                    content=f"⚽ **Результат матча RFL:** {team1} **{score1} : {score2}** {team2}",
-                    file=file
-                )
-            else:
-                await interaction.followup.send(
-                    content=f"⚽ **Результат матча RFL:**\n**{team1}** {score1} : {score2} **{team2}**\n\n📝 **События:**\n{events}"
-                )
+    # Текст деталей / событий
+    draw.text((70, 340), details or "Без забитых мячей", fill=(226, 232, 240))
 
-        except Exception as e:
-            await interaction.followup.send(content=f"❌ Ошибка при генерации карточки: `{e}`")
+    # Подпись снизу
+    draw.rectangle([(50, 510), (1150, 620)], fill=(30, 41, 59))
+    draw.text((width // 2, 565), f"Официальный протокол матча RFL | {team1_name} {score1} : {score2} {team2_name}", fill=(148, 163, 184), anchor="mm")
 
-class ResultView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
+    # Сохраняем в буфер
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
 
-    @discord.ui.button(label="Оформить результат матча", style=discord.ButtonStyle.green, emoji="⚽")
-    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(MatchResultModal())
+@bot.tree.command(name="result", description="Оформить результат матча с логотипами")
+@app_commands.describe(
+    team1="Название первой команды",
+    score1="Счёт первой команды",
+    team2="Название второй команды",
+    score2="Счёт второй команды",
+    details="Авторы голов / События",
+    logo1="Эмблема/аватарка первой команды",
+    logo2="Эмблема/аватарка второй команды"
+)
+async def result(
+    interaction: discord.Interaction, 
+    team1: str, 
+    score1: int, 
+    team2: str, 
+    score2: int,
+    details: str = "Без событий",
+    logo1: discord.Attachment = None,
+    logo2: discord.Attachment = None
+):
+    # Показываем статус загрузки (чтобы не было "Приложение не отвечает")
+    await interaction.response.defer(thinking=True)
 
-    @discord.ui.button(label="Закрыть", style=discord.ButtonStyle.red)
-    async def close_menu(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Меню закрыто.", ephemeral=True)
+    try:
+        # Скачиваем эмблемы, если прикреплены
+        img_logo1 = await download_image(logo1.url) if logo1 else None
+        img_logo2 = await download_image(logo2.url) if logo2 else None
+
+        # Генерируем карточку
+        loop = asyncio.get_running_loop()
+        card_buf = await loop.run_in_executor(
+            None, generate_card, team1, str(score1), team2, str(score2), details, img_logo1, img_logo2
+        )
+
+        file = discord.File(fp=card_buf, filename="rfl_match_result.png")
+        
+        await interaction.followup.send(
+            content=f"⚽ **МАТЧ ОКОНЧЕН!**\n🏆 **{team1}** {score1} : {score2} **{team2}**",
+            file=file
+        )
+
+    except Exception as e:
+        await interaction.followup.send(content=f"❌ Ошибка при формировании карточки: `{e}`")
 
 @bot.event
 async def on_ready():
@@ -106,16 +126,6 @@ async def on_ready():
         print(f"Синхронизировано команд: {len(synced)}")
     except Exception as e:
         print(f"Ошибка синхронизации: {e}")
-
-# Заменили /rfl на /result
-@bot.tree.command(name="result", description="Управление результатами матчей RFL")
-async def result_command(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="🏆 Управление результатами RFL",
-        description="Нажми кнопку ниже, чтобы ввести счет матча и сгенерировать карточку:",
-        color=discord.Color.blue()
-    )
-    await interaction.response.send_message(embed=embed, view=ResultView(), ephemeral=True)
 
 TOKEN = os.getenv("BOT_TOKEN")
 
