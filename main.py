@@ -157,13 +157,17 @@ class MatchDataModal(discord.ui.Modal, title="📊 Статистика матч
         self.start_view = start_view
 
     async def on_submit(self, interaction: discord.Interaction):
-        self.start_view.team1 = self.team1.value.strip()
-        self.start_view.score1 = self.score1.value.strip()
-        self.start_view.events1 = self.events1.value
-        self.start_view.team2 = self.team2.value.strip()
-        self.start_view.score2 = self.score2.value.strip()
-        self.start_view.events2 = self.events2.value
-        await interaction.response.send_message("✅ Статистика матча успешно зафиксирована!", ephemeral=True)
+        try:
+            self.start_view.team1 = self.team1.value.strip()
+            self.start_view.score1 = self.score1.value.strip()
+            self.start_view.events1 = self.events1.value
+            self.start_view.team2 = self.team2.value.strip()
+            self.start_view.score2 = self.score2.value.strip()
+            self.start_view.events2 = self.events2.value
+            await interaction.response.send_message("✅ Статистика матча успешно зафиксирована!", ephemeral=True)
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Ошибка: {e}", ephemeral=True)
 
 # ФОРМА ДЛЯ ВВОДА MVP
 class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"):
@@ -184,7 +188,7 @@ class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"
 # КНОПКИ ПОД ГОТОВОЙ КАРТОЧКОЙ
 class MatchResultView(discord.ui.View):
     def __init__(self, team1: str, score1: str, team2: str, score2: str, events1: str, events2: str):
-        super().__init__(timeout=None) # Вечное меню
+        super().__init__(timeout=None)
         self.team1 = team1
         self.score1 = score1
         self.team2 = team2
@@ -218,10 +222,10 @@ class MatchResultView(discord.ui.View):
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-# СТАРТОВАЯ ПАНЕЛЬ С КНОПКАМИ ПОСЛЕ /result (ВЕЧНАЯ И БЕЗ ТАЙМАУТА)
+# СТАРТОВАЯ ПАНЕЛЬ С КНОПКАМИ ПОСЛЕ /result (C CUSTOM_ID ДЛЯ СТАБИЛЬНОСТИ)
 class ResultStartView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None) # timeout=None гарантирует, что кнопки не выключаются
+        super().__init__(timeout=None)
         self.logo1_url = None
         self.logo2_url = None
         self.team1 = None
@@ -231,25 +235,24 @@ class ResultStartView(discord.ui.View):
         self.score2 = None
         self.events2 = "-"
 
-    @discord.ui.button(label="🛡️ Логотип 1", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="🛡️ Логотип 1", style=discord.ButtonStyle.secondary, custom_id="btn_start_logo1", row=0)
     async def btn_logo1(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(Logo1Modal(self))
 
-    @discord.ui.button(label="🛡️ Логотип 2", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="🛡️ Логотип 2", style=discord.ButtonStyle.secondary, custom_id="btn_start_logo2", row=0)
     async def btn_logo2(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(Logo2Modal(self))
 
-    @discord.ui.button(label="📝 Статистика матча", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="📝 Статистика матча", style=discord.ButtonStyle.primary, custom_id="btn_start_match_data", row=0)
     async def btn_match_data(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(MatchDataModal(self))
 
-    @discord.ui.button(label="🚀 Сгенерировать карточку", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(label="🚀 Сгенерировать карточку", style=discord.ButtonStyle.success, custom_id="btn_start_generate", row=1)
     async def btn_generate(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.team1 or not self.team2 or not self.score1 or not self.score2:
             await interaction.response.send_message("❌ Сначала заполните данные матча через кнопку **«📝 Статистика матча»**!", ephemeral=True)
             return
 
-        # Мгновенно сообщаем Discord о начале генерации (фикс ошибки "не ответил вовремя")
         await interaction.response.defer()
 
         try:
@@ -350,6 +353,7 @@ async def help_command(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     print(f"=== БОТ ЗАПУЩЕН: {bot.user} ===")
+    bot.add_view(ResultStartView())
     try:
         await bot.tree.sync()
     except Exception as e:
