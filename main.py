@@ -64,6 +64,7 @@ def make_circle_logo(img: Image.Image, size: tuple) -> Image.Image:
     output.paste(img, (0, 0), mask=mask)
     return output
 
+# --- ФУНКЦИЯ ГЕНЕРАЦИИ КАРТОЧКИ С ИСПРАВЛЕННЫМ РАЗМЕЩЕНИЕМ ЛОГО ---
 def create_433_style_card(team1: str, score1: str, team2: str, score2: str, 
                           events1: str, events2: str, bg_img: Image.Image,
                           logo1_img: Image.Image = None, logo2_img: Image.Image = None) -> io.BytesIO:
@@ -85,19 +86,22 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
 
     # ДИНАМИЧЕСКИЙ РАЗМЕР ШРИФТА ДЛЯ СЧЁТА
     score_text = f"{score1}  -  {score2}"
-    # Если счёт очень длинный (например 10000), уменьшаем шрифт, чтобы не вылезал
     score_font_size = 110 if len(score_text) <= 7 else 70
     font_score = get_font(score_font_size)
 
-    # Рамка карточки
-    card_box = [(50, 320), (950, 950)]
+    # Константы рамки
+    frame_left = 50
+    frame_right = 950
+    card_box = [(frame_left, 320), (frame_right, 950)]
     draw.rounded_rectangle(card_box, radius=30, outline=(255, 255, 255, 180), width=4)
 
     # 1. Заголовок
     draw.text((width // 2, 365), "RFL MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
 
-    # 2. Названия команд (сдвинуты ниже под логотипы)
+    # 2. Названия команд (сдвинуты немного к центру от краев)
+    # Название команды 1 (слева)
     draw.text((260, 550), team1.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
+    # Название команды 2 (справа)
     draw.text((740, 550), team2.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
 
     # 3. Счёт и Статус
@@ -120,15 +124,20 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     draw_multiline_events(events1, 260, 665)
     draw_multiline_events(events2, 740, 665)
 
-    # 🔥 6. ВСТАВЛЯЕМ ЛОГОТИПЫ В САМОМ КОНЦЕ (поверх всего текста)
-    # Позиция НАД названием команды, чтобы никогда не пересекаться со счётом
+    # 🔥 6. ВСТАВЛЯЕМ ЛОГОТИПЫ В САМОМ КОНЦЕ (поверх всего текста) 🔥
+    # ПОФИШЕНО: Жесткая привязка к краям рамки, а не к тексту.
+    logo_size_val = 110 # Чуть больше, т.к. они сбоку
+    logo_y_pos = 460 # Позиция по вертикали (примерно по центру счёта)
+
     if logo1_img:
-        l1 = make_circle_logo(logo1_img, (100, 100))
-        bg.paste(l1, (210, 415), l1)
+        l1 = make_circle_logo(logo1_img, (logo_size_val, logo_size_val))
+        # Лого 1 прижато к ЛЕВОМУ краю рамки (frame_left + отступ)
+        bg.paste(l1, (frame_left + 40, logo_y_pos), l1)
 
     if logo2_img:
-        l2 = make_circle_logo(logo2_img, (100, 100))
-        bg.paste(l2, (690, 415), l2)
+        l2 = make_circle_logo(logo2_img, (logo_size_val, logo_size_val))
+        # Лого 2 прижато к ПРАВОМУ краю рамки (frame_right - ширина лого - отступ)
+        bg.paste(l2, (frame_right - logo_size_val - 40, logo_y_pos), l2)
 
     buf = io.BytesIO()
     bg.save(buf, format="PNG")
@@ -168,8 +177,8 @@ class Logo2Modal(discord.ui.Modal, title="🛡️ Аватарка Команд�
         await interaction.response.send_message("✅ Логотип Команды 2 сохранён!", ephemeral=True)
 
 class MatchDataModal(discord.ui.Modal, title="📊 Статистика матча"):
-    team1 = discord.ui.TextInput(label="Название Команды 1", placeholder=" BAYER 04", required=True)
-    team2 = discord.ui.TextInput(label="Название Команды 2", placeholder=" VALENCIA", required=True)
+    team1 = discord.ui.TextInput(label="Название Команды 1", placeholder="BAYER 04", required=True)
+    team2 = discord.ui.TextInput(label="Название Команды 2", placeholder="VALENCIA", required=True)
     full_score = discord.ui.TextInput(label="Счёт матча (формат 2:0 или 2-0)", placeholder="2:0", required=True)
     events1 = discord.ui.TextInput(label="Голы Команды 1", placeholder="34' Schick, 60' Wirtz", required=False, default="-")
     events2 = discord.ui.TextInput(label="Голы Команды 2", placeholder="78' Duro", required=False, default="-")
