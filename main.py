@@ -4,12 +4,57 @@ import asyncio
 import random
 import urllib.parse
 import threading
+import sqlite3
+from datetime import datetime
 from flask import Flask
 import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
+
+# --- ИНИЦИАЛИЗА БАЗЫ ДАННЫХ (SQLite) ---
+DB_NAME = "matches.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS matches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team1 TEXT NOT NULL,
+            score1 INTEGER NOT NULL,
+            team2 TEXT NOT NULL,
+            score2 INTEGER NOT NULL,
+            events1 TEXT,
+            events2 TEXT,
+            timestamp TEXT NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def save_match_to_db(team1: str, score1: str, team2: str, score2: str, events1: str, events2: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    cursor.execute('''
+        INSERT INTO matches (team1, score1, team2, score2, events1, events2, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (team1, int(score1), team2, int(score2), events1, events2, now_str))
+    conn.commit()
+    conn.close()
+
+def get_recent_matches(limit: int = 5):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT team1, score1, team2, score2, timestamp FROM matches ORDER BY id DESC LIMIT ?', (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+# Запускаем создание базы при старте
+init_db()
 
 # --- ВЕБ-СЕРВЕР ДЛЯ RENDER (Keep Alive) ---
 app = Flask('')
@@ -139,7 +184,7 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     buf.seek(0)
     return buf
 
-# === MODALS (Окна ввода) ===
+# === MODALS ===
 
 class Logo1Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 1"):
     url = discord.ui.TextInput(
@@ -212,9 +257,8 @@ class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"
         embed.set_footer(text="Официальное решение RESULTS League")
         await interaction.followup.send(embed=embed)
 
-# === VIEWS (Интерактивные элементы) ===
+# === VIEWS ===
 
-# КНОПКИ ПОД ГОТОВОЙ КАРТОЧКОЙ
 class MatchResultView(discord.ui.View):
     def __init__(self, team1: str, score1: str, team2: str, score2: str, events1: str, events2: str):
         super().__init__(timeout=None)
@@ -241,7 +285,6 @@ class MatchResultView(discord.ui.View):
     async def mvp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(MVPModal())
 
-# СТАРТОВАЯ ПАНЕЛЬ С КНОПКАМИ ПОСЛЕ /result
 class ResultStartView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -275,6 +318,9 @@ class ResultStartView(discord.ui.View):
         await interaction.response.defer()
 
         try:
+            # Сохранение в базу данных
+            save_match_to_db(self.team1, self.score1, self.team2, self.score2, self.events1, self.events2)
+
             bg_styles = [
                 "abstract dark moody soccer stadium lights background, blue neon atmosphere, professional sports photography, 4k",
                 "abstract dark soccer stadium, fiery red neon lights background, intense atmosphere, 4k",
@@ -330,12 +376,33 @@ async def result(interaction: discord.Interaction):
             "Заполните информацию о прошедшем матче перед публикацией:\n\n"
             "1️⃣ **`🛡️ Логотип`** — отправьте эмблемы в Discord, скопируйте ссылки на них и вставьте.\n"
             "2️⃣ **`📝 Статистика матча`** — введите название команд, счёт и авторов голов.\n"
-            "3️⃣ **`🚀 Сгенерировать карточку`** — создаст и отправит готовую карточку в чат!"
+            "3️⃣ **`🚀 Сгенерировать карточку`** — создаст и отправит готовую карточку в чат (и сохранит в базу)!"
         ),
         color=discord.Color.blue()
     )
     embed.set_footer(text="RESULTS System v2.0")
     await interaction.response.send_message(embed=embed, view=ResultStartView(), ephemeral=True)
+
+@bot.tree.command(name="history", description="История последних сыгранных матчей RESULTS")
+async def history(interaction: discord.Interaction):
+    matches = get_recent_matches(5)
+    if not matches:
+        await interaction.response.send_message("📂 В базе данных пока нет сохранённых матчей.", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title="📜 История последних матчей RESULTS",
+        color=discord.Color.blue()
+    )
+    
+    for t1, s1, t2, s2, date in matches:
+        embed.add_field(
+            name=f"⚽ {t1}  {s1} - {s2}  {t2}",
+            value=f"🗓️ Дата: {date}",
+            inline=False
+        )
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -356,6 +423,7 @@ async def help_command(interaction: discord.Interaction):
         name="🎮 Основные команды:",
         value=(
             "• `/result` — Открывает интерактивное меню оформления матча (Только Админы).\n"
+            "• `/history` — История последних сыгранных матчей.\n"
             "• `/help` — Показывает это меню со справкой."
         ),
         inline=False
