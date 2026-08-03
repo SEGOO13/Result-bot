@@ -15,10 +15,9 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "RFL Bot Status: Live & Persistent"
+    return "RFL Bot Status: Active"
 
 def run_web():
-    # Render использует порт 10000 по умолчанию
     port = int(os.getenv("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
@@ -29,7 +28,6 @@ def keep_alive():
 
 # --- DISCORD БОТ ---
 intents = discord.Intents.default()
-# Бот должен быть commands.Bot для использования PERSISTENT VIEWS
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 async def fetch_image(url: str) -> Image.Image:
@@ -112,13 +110,11 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     buf.seek(0)
     return buf
 
-# === MODALS ===
-
 # ОКНО ВВОДА ССЫЛКИ НА ЛОГОТИП КОМАНДЫ 1
 class Logo1Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 1"):
     url = discord.ui.TextInput(
-        label="Ссылка на фото (URL)", 
-        placeholder="Отправьте лого в Discord -> Копировать ссылку -> Вставить сюда", 
+        label="Ссылка на фото (или скопируйте из Discord)", 
+        placeholder="Отправьте лого в чат Discord -> Скопируйте ссылку -> Вставьте сюда", 
         required=True
     )
 
@@ -127,16 +123,14 @@ class Logo1Modal(discord.ui.Modal, title="🛡️ Аватарка Команд�
         self.start_view = start_view
 
     async def on_submit(self, interaction: discord.Interaction):
-        # defer() НЕЛЬЗЯ делать до send_modal, но МОЖНО внутри on_submit, если обработка долгая
-        # Но здесь обработка мгновенная (просто сохранение переменной), defer не нужен
         self.start_view.logo1_url = self.url.value.strip()
         await interaction.response.send_message("✅ Логотип Команды 1 сохранён!", ephemeral=True)
 
 # ОКНО ВВОДА ССЫЛКИ НА ЛОГОТИП КОМАНДЫ 2
 class Logo2Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 2"):
     url = discord.ui.TextInput(
-        label="Ссылка на фото (URL)", 
-        placeholder="Отправьте лого в Discord -> Копировать ссылку -> Вставить сюда", 
+        label="Ссылка на фото (или скопируйте из Discord)", 
+        placeholder="Отправьте лого в чат Discord -> Скопируйте ссылку -> Вставьте сюда", 
         required=True
     )
 
@@ -150,27 +144,30 @@ class Logo2Modal(discord.ui.Modal, title="🛡️ Аватарка Команд�
 
 # ОКНО ВВОДА ДАННЫХ МАТЧА
 class MatchDataModal(discord.ui.Modal, title="📊 Статистика матча"):
-    team1 = discord.ui.TextInput(label="Название Команды 1", placeholder=" BAYER 04", required=True)
+    team1 = discord.ui.TextInput(label="Название Команды 1", placeholder="например: BAYER 04", required=True)
     score1 = discord.ui.TextInput(label="Счёт Команды 1", placeholder="2", required=True)
-    events1 = discord.ui.TextInput(label="Голы Команды 1", placeholder="34' Schick, 60' Wirtz", required=False, default="-")
+    events1 = discord.ui.TextInput(label="Авторы голов Команды 1", placeholder="34' Schick, 60' Wirtz", required=False, default="-")
 
-    team2 = discord.ui.TextInput(label="Название Команды 2", placeholder=" VALENCIA", required=True)
+    team2 = discord.ui.TextInput(label="Название Команды 2", placeholder="например: VALENCIA", required=True)
     score2 = discord.ui.TextInput(label="Счёт Команды 2", placeholder="0", required=True)
-    events2 = discord.ui.TextInput(label="Голы Команды 2", placeholder="78' Duro", required=False, default="-")
+    events2 = discord.ui.TextInput(label="Авторы голов Команды 2", placeholder="78' Duro", required=False, default="-")
 
     def __init__(self, start_view):
         super().__init__()
         self.start_view = start_view
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Обработка мгновенная (сохранение), defer() не нужен
-        self.start_view.team1 = self.team1.value.strip()
-        self.start_view.score1 = self.score1.value.strip()
-        self.start_view.events1 = self.events1.value
-        self.start_view.team2 = self.team2.value.strip()
-        self.start_view.score2 = self.score2.value.strip()
-        self.start_view.events2 = self.events2.value
-        await interaction.response.send_message("✅ Статистика матча зафиксирована!", ephemeral=True)
+        try:
+            self.start_view.team1 = self.team1.value.strip()
+            self.start_view.score1 = self.score1.value.strip()
+            self.start_view.events1 = self.events1.value
+            self.start_view.team2 = self.team2.value.strip()
+            self.start_view.score2 = self.score2.value.strip()
+            self.start_view.events2 = self.events2.value
+            await interaction.response.send_message("✅ Статистика матча успешно зафиксирована!", ephemeral=True)
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Ошибка: {e}", ephemeral=True)
 
 # ФОРМА ДЛЯ ВВОДА MVP
 class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"):
@@ -178,7 +175,6 @@ class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"
     stats = discord.ui.TextInput(label="Статистика игрока", placeholder="например: 1 Гол, 2 Передачи", required=False, default="Лучший игрок встречи")
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Здесь мы генерируем Embed, defer() полезен на случай лагов Discord
         await interaction.response.defer()
         embed = discord.Embed(
             title="⭐ ИГРОК МАТЧА (MVP)",
@@ -189,9 +185,7 @@ class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"
         embed.set_footer(text="Официальное решение RFL League")
         await interaction.followup.send(embed=embed)
 
-# === VIEWS ===
-
-# КНОПКИ ПОД ГОТОВОЙ КАРТОЧКОЙ (ЭФЕМЕРНЫЕ/ТАЙМАУТНЫЕ)
+# КНОПКИ ПОД ГОТОВОЙ КАРТОЧКОЙ
 class MatchResultView(discord.ui.View):
     def __init__(self, team1: str, score1: str, team2: str, score2: str, events1: str, events2: str):
         super().__init__(timeout=None)
@@ -216,7 +210,6 @@ class MatchResultView(discord.ui.View):
 
     @discord.ui.button(label="⭐ MVP Матча", style=discord.ButtonStyle.success, custom_id="btn_mvp")
     async def mvp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Нажатие кнопки открывает Модал - defer() ДЕЛАТЬ НЕЛЬЗЯ
         await interaction.response.send_modal(MVPModal())
 
     @discord.ui.button(label="📊 Таблица", style=discord.ButtonStyle.secondary, custom_id="btn_table")
@@ -229,12 +222,10 @@ class MatchResultView(discord.ui.View):
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-# СТАРТОВАЯ ПАНЕЛЬ С КНОПКАМИ ПОСЛЕ /result (ГЛОБАЛЬНАЯ, PERSISTENT VIEW)
+# СТАРТОВАЯ ПАНЕЛЬ С КНОПКАМИ ПОСЛЕ /result (C CUSTOM_ID ДЛЯ СТАБИЛЬНОСТИ)
 class ResultStartView(discord.ui.View):
     def __init__(self):
-        # Вечный таймаут
         super().__init__(timeout=None)
-        # Данные хранятся внутри экземпляра в памяти
         self.logo1_url = None
         self.logo2_url = None
         self.team1 = None
@@ -244,35 +235,28 @@ class ResultStartView(discord.ui.View):
         self.score2 = None
         self.events2 = "-"
 
-    # Присваиваем УНИКАЛЬНЫЕ И ЖЁСТКИЕ CUSTOM_ID для каждой кнопки!
-    # Это КЛЮЧ к исправлению ошибки "не ответил вовремя" после перезапуска.
-
-    @discord.ui.button(label="🛡️ Логотип 1", style=discord.ButtonStyle.secondary, custom_id="rfl_persistent:btn_logo1", row=0)
+    @discord.ui.button(label="🛡️ Логотип 1", style=discord.ButtonStyle.secondary, custom_id="btn_start_logo1", row=0)
     async def btn_logo1(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Открытие Модала - defer() НЕЛЬЗЯ
         await interaction.response.send_modal(Logo1Modal(self))
 
-    @discord.ui.button(label="🛡️ Логотип 2", style=discord.ButtonStyle.secondary, custom_id="rfl_persistent:btn_logo2", row=0)
+    @discord.ui.button(label="🛡️ Логотип 2", style=discord.ButtonStyle.secondary, custom_id="btn_start_logo2", row=0)
     async def btn_logo2(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Открытие Модала - defer() НЕЛЬЗЯ
         await interaction.response.send_modal(Logo2Modal(self))
 
-    @discord.ui.button(label="📝 Статистика матча", style=discord.ButtonStyle.primary, custom_id="rfl_persistent:btn_match_data", row=0)
+    @discord.ui.button(label="📝 Статистика матча", style=discord.ButtonStyle.primary, custom_id="btn_start_match_data", row=0)
     async def btn_match_data(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Нажатие кнопки открывает Модал - defer() ДЕЛАТЬ НЕЛЬЗЯ, иначе Модал не откроется
         await interaction.response.send_modal(MatchDataModal(self))
 
-    @discord.ui.button(label="🚀 Сгенерировать карточку", style=discord.ButtonStyle.success, custom_id="rfl_persistent:btn_generate", row=1)
+    @discord.ui.button(label="🚀 Сгенерировать карточку", style=discord.ButtonStyle.success, custom_id="btn_start_generate", row=1)
     async def btn_generate(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.team1 or not self.team2 or not self.score1 or not self.score2:
             await interaction.response.send_message("❌ Сначала заполните данные матча через кнопку **«📝 Статистика матча»**!", ephemeral=True)
             return
 
-        # Нажатие этой кнопки запускает генерацию ИИ - defer() КРИТИЧЕСКИ ВАЖЕН!
         await interaction.response.defer()
 
         try:
-            ai_prompt = "abstract dark moody soccer stadium lights background, blue neon atmosphere, professional sports photography, 4k"
+            ai_prompt = "abstract dark moody soccer stadium lights background, blue neon atmosphere, 4k"
             encoded_prompt = urllib.parse.quote(ai_prompt)
             bg_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true"
 
@@ -283,7 +267,6 @@ class ResultStartView(discord.ui.View):
             logo1_img = await fetch_image(self.logo1_url) if self.logo1_url else None
             logo2_img = await fetch_image(self.logo2_url) if self.logo2_url else None
 
-            # Рендеринг в отдельном потоке (на всякий случай)
             loop = asyncio.get_running_loop()
             card_buf = await loop.run_in_executor(
                 None, create_433_style_card, 
@@ -309,24 +292,20 @@ class ResultStartView(discord.ui.View):
         except Exception as e:
             await interaction.followup.send(content=f"❌ Ошибка при сборке карточки: `{e}`")
 
-# === BOT EVENTS & COMMANDS ===
-
 # КОМАНДА /result
 @bot.tree.command(name="result", description="Центр управления матчем RFL")
 async def result(interaction: discord.Interaction):
-    # Окно управления всегда эфемерное (только для админа)
     embed = discord.Embed(
         title="⚽ Центр управления RFL",
         description=(
             "Заполните информацию о прошедшем матче перед публикацией:\n\n"
-            "1️⃣ **`🛡️ Логотип`** — отправьте эмблемы в Discord, скопируйте ссылки на них и вставьте.\n"
+            "1️⃣ **`🛡️ Логотип 1`** и **`🛡️ Логотип 2`** — отправьте эмблему в любой чат Discord, скопируйте ссылку на неё и вставьте.\n"
             "2️⃣ **`📝 Статистика матча`** — введите название команд, счёт и авторов голов.\n"
             "3️⃣ **`🚀 Сгенерировать карточку`** — создаст и отправит готовую карточку в чат!"
         ),
         color=discord.Color.blue()
     )
     embed.set_footer(text="RFL Result System v2.0")
-    # Используем persistent view instance
     await interaction.response.send_message(embed=embed, view=ResultStartView(), ephemeral=True)
 
 # КОМАНДА /help
@@ -374,31 +353,15 @@ async def help_command(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     print(f"=== БОТ ЗАПУЩЕН: {bot.user} ===")
-    
-    # ФОРСИРОВАННАЯ РЕГИСТРАЦИЯ PERSISTENT VIEWS ПРИ СТАРТЕ!
-    # Это обязано быть commands.Bot, а не просто discord.Bot
+    bot.add_view(ResultStartView())
     try:
-        # Уникальный экземпляр view для persistent views
-        global_view = ResultStartView()
-        bot.add_view(global_view)
-        print("=== PERSISTENT VIEWS ЗАРЕГИСТРИРОВАНЫ УСПЕШНО ===")
+        await bot.tree.sync()
     except Exception as e:
-        print(f"Ошибка регистрации views: {e}")
+        print(f"Ошибка синхронизации: {e}")
 
-    try:
-        synced = await bot.tree.sync()
-        print(f"=== СИНХРОНИЗИРОВАНО КОМАНД: {len(synced)} ===")
-    except Exception as e:
-        print(f"Ошибка синхронизации команд: {e}")
-
-# Получение токена из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
 
 if __name__ == "__main__":
     if TOKEN:
-        # Сначала запускаем веб-сервер keep_alive
         keep_alive()
-        # Затем запускаем Discord бота
         bot.run(TOKEN)
-    else:
-        print("ОШИБКА: Переменная BOT_TOKEN не найдена!")
