@@ -1,6 +1,7 @@
 import os
 import io
 import asyncio
+import random
 import urllib.parse
 import threading
 from flask import Flask
@@ -52,6 +53,17 @@ def get_font(size: int):
         except:
             return ImageFont.load_default()
 
+def make_circle_logo(img: Image.Image, size: tuple) -> Image.Image:
+    """Обрезка логотипа в ровный круг"""
+    img = img.resize(size, Image.Resampling.LANCZOS).convert("RGBA")
+    mask = Image.new('L', size, 0)
+    draw = ImageDraw.Draw(mask)
+    draw.ellipse((0, 0) + size, fill=255)
+    
+    output = Image.new('RGBA', size, (0, 0, 0, 0))
+    output.paste(img, (0, 0), mask=mask)
+    return output
+
 def create_433_style_card(team1: str, score1: str, team2: str, score2: str, 
                           events1: str, events2: str, bg_img: Image.Image,
                           logo1_img: Image.Image = None, logo2_img: Image.Image = None) -> io.BytesIO:
@@ -62,48 +74,54 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     # Тёмный оверлей
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
-    overlay_draw.rectangle([(0, 300), (width, height)], fill=(10, 15, 25, 225))
+    overlay_draw.rectangle([(0, 250), (width, height)], fill=(10, 15, 25, 230))
     bg = Image.alpha_composite(bg, overlay)
     draw = ImageDraw.Draw(bg)
 
-    font_title = get_font(36)
-    font_score = get_font(110)
-    font_team = get_font(46)
-    font_status = get_font(32)
-    font_events = get_font(26)
+    font_title = get_font(32)
+    font_score = get_font(120)
+    font_team = get_font(40)
+    font_status = get_font(28)
+    font_events = get_font(20)
 
     # Рамка карточки
-    card_box = [(50, 400), (950, 930)]
+    card_box = [(50, 320), (950, 950)]
     draw.rounded_rectangle(card_box, radius=30, outline=(255, 255, 255, 180), width=4)
 
     # Заголовок
-    draw.text((width // 2, 445), "RFL MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
+    draw.text((width // 2, 365), "RFL MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
 
-    # Названия команд
-    draw.text((260, 520), team1.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
-    draw.text((740, 520), team2.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
-
-    # Счёт
-    score_text = f"{score1}  -  {score2}"
-    draw.text((width // 2, 620), score_text, fill=(255, 255, 255), font=font_score, anchor="mm")
-
-    # FULL-TIME
-    draw.text((width // 2, 715), "FULL-TIME", fill=(234, 179, 8), font=font_status, anchor="mm")
-
-    # Отрисовка логотипов
+    # --- РАЗМЕЩЕНИЕ ЛОГОТИПОВ И НАЗВАНИЙ КОМАНД ---
     if logo1_img:
-        l1 = logo1_img.resize((120, 120))
-        bg.paste(l1, (200, 570), l1)
+        l1 = make_circle_logo(logo1_img, (110, 110))
+        bg.paste(l1, (205, 410), l1)
+    draw.text((260, 545), team1.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
+
     if logo2_img:
-        l2 = logo2_img.resize((120, 120))
-        bg.paste(l2, (680, 570), l2)
+        l2 = make_circle_logo(logo2_img, (110, 110))
+        bg.paste(l2, (685, 410), l2)
+    draw.text((740, 545), team2.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
+
+    # --- СЧЁТ И СТАТУС ---
+    score_text = f"{score1}  -  {score2}"
+    draw.text((width // 2, 490), score_text, fill=(255, 255, 255), font=font_score, anchor="mm")
+    draw.text((width // 2, 580), "FULL-TIME", fill=(234, 179, 8), font=font_status, anchor="mm")
 
     # Разделительная линия
-    draw.line([(100, 755), (900, 755)], fill=(255, 255, 255, 80), width=2)
+    draw.line([(100, 625), (900, 625)], fill=(255, 255, 255, 80), width=2)
 
-    # События
-    draw.text((260, 830), events1, fill=(220, 220, 220), font=font_events, anchor="mm")
-    draw.text((740, 830), events2, fill=(220, 220, 220), font=font_events, anchor="mm")
+    # --- СОБЫТИЯ МАТЧА ---
+    def draw_multiline_events(text, center_x, start_y):
+        lines = text.split(',')
+        current_y = start_y
+        for line in lines:
+            clean_line = line.strip()
+            if clean_line:
+                draw.text((center_x, current_y), clean_line, fill=(220, 220, 220), font=font_events, anchor="mm")
+                current_y += 30
+
+    draw_multiline_events(events1, 260, 660)
+    draw_multiline_events(events2, 740, 660)
 
     buf = io.BytesIO()
     bg.save(buf, format="PNG")
@@ -142,7 +160,6 @@ class Logo2Modal(discord.ui.Modal, title="🛡️ Аватарка Команд�
         self.start_view.logo2_url = self.url.value.strip()
         await interaction.response.send_message("✅ Логотип Команды 2 сохранён!", ephemeral=True)
 
-# ИСПРАВЛЕННОЕ ОКНО: РОВНО 5 ПОЛЕЙ (МАКСИМУМ DISCORD API)
 class MatchDataModal(discord.ui.Modal, title="📊 Статистика матча"):
     team1 = discord.ui.TextInput(label="Название Команды 1", placeholder="например: BAYER 04", required=True)
     team2 = discord.ui.TextInput(label="Название Команды 2", placeholder="например: VALENCIA", required=True)
@@ -155,7 +172,6 @@ class MatchDataModal(discord.ui.Modal, title="📊 Статистика матч
         self.start_view = start_view
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Парсим счёт
         raw_score = self.full_score.value.strip().replace('-', ':').replace(' ', '')
         if ':' in raw_score:
             s1, s2 = raw_score.split(':', 1)
@@ -213,16 +229,6 @@ class MatchResultView(discord.ui.View):
     async def mvp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(MVPModal())
 
-    @discord.ui.button(label="📊 Таблица", style=discord.ButtonStyle.secondary, custom_id="btn_table")
-    async def table_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        embed = discord.Embed(
-            title="📊 ТУРНИРНАЯ ТАБЛИЦА RFL",
-            description="Результат матча учтён! Таблица обновляется автоматически после каждого тура.\n\nЗа актуальным положением команд следите в канале `#таблица`.",
-            color=discord.Color.green()
-        )
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
 class ResultStartView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=600) 
@@ -256,9 +262,17 @@ class ResultStartView(discord.ui.View):
         await interaction.response.defer()
 
         try:
-            ai_prompt = "abstract dark moody soccer stadium lights background, blue neon atmosphere, professional sports photography, 4k"
-            encoded_prompt = urllib.parse.quote(ai_prompt)
-            bg_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true"
+            bg_styles = [
+                "abstract dark moody soccer stadium lights background, blue neon atmosphere, professional sports photography, 4k",
+                "abstract dark soccer stadium, fiery red neon lights background, intense atmosphere, 4k",
+                "abstract dark stadium, golden yellow lighting background, epic champions atmosphere, 4k",
+                "abstract dark stadium, deep purple violet neon background, modern matchday style, 4k",
+                "abstract dark stadium, emerald green neon lights background, clean sports design, 4k",
+                "abstract futuristic soccer stadium, cyan blue and orange neon light background, 4k"
+            ]
+            chosen_prompt = random.choice(bg_styles)
+            encoded_prompt = urllib.parse.quote(chosen_prompt)
+            bg_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true&seed={random.randint(1, 999999)}"
 
             bg_img = await fetch_image(bg_url)
             if not bg_img:
@@ -294,7 +308,9 @@ class ResultStartView(discord.ui.View):
 
 # === BOT EVENTS & COMMANDS ===
 
-@bot.tree.command(name="result", description="Центр управления матчем RFL")
+# 🔥 ТОЛЬКО ДЛЯ АДМИНИСТРАТОРОВ СЕРВЕРА 🔥
+@bot.tree.command(name="result", description="Центр управления матчем RFL (Только для Администраторов)")
+@app_commands.checks.has_permissions(administrator=True)
 async def result(interaction: discord.Interaction):
     embed = discord.Embed(
         title="⚽ Центр управления RFL",
@@ -309,6 +325,14 @@ async def result(interaction: discord.Interaction):
     embed.set_footer(text="RFL Result System v2.0")
     await interaction.response.send_message(embed=embed, view=ResultStartView(), ephemeral=True)
 
+# ОБРАБОТЧИК ОШИБОК (ОТПРАВЛЯЕТ УВЕДОМЛЕНИЕ ЕСЛИ ВВЁЛ НЕ АДМИН)
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message("❌ У вас нет прав **Администратора** для использования этой команды!", ephemeral=True)
+    else:
+        print(f"Ошибка команды: {error}")
+
 @bot.tree.command(name="help", description="Полная инструкция и возможности RFL Bot")
 async def help_command(interaction: discord.Interaction):
     embed = discord.Embed(
@@ -320,29 +344,8 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(
         name="🎮 Основные команды:",
         value=(
-            "• `/result` — Открывает интерактивное меню оформления матча.\n"
-            "• `/help` — Показывает это меню с справкой."
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🛠️ Как опубликовать матч?",
-        value=(
-            "1. Введите команду `/result`.\n"
-            "2. (Опционально) Нажмите кнопки **`🛡️ Логотип`** и вставьте ссылку на эмблему.\n"
-            "3. Нажмите **`📝 Статистика матча`**, чтобы указать клубы, счёт и авторов голов.\n"
-            "4. Жмите **`🚀 Сгенерировать карточку`** — бот сделает крутую картинку!"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="📌 Кнопки под готовой карточкой:",
-        value=(
-            "• **📋 Протокол** — показывает детализацию по забитым голам.\n"
-            "• **⭐ MVP Матча** — открывает форму для голосования/выбора лучшего игрока.\n"
-            "• **📊 Таблица** — отправляет статус турнирного положения."
+            "• `/result` — Открывает интерактивное меню оформления матча (Только Админы).\n"
+            "• `/help` — Показывает это меню со справкой."
         ),
         inline=False
     )
