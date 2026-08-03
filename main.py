@@ -174,6 +174,7 @@ async def result(
 async def on_ready():
     print(f"=== БОТ УСПЕШНО ЗАПУЩЕН КАК: {bot.user} ===")
     try:
+        # Принудительно регистрируем команды мгновенно для всех серверов
         synced = await bot.tree.sync()
         print(f"=== СИНХРОНИЗИРОВАНО КОМАНД: {len(synced)} ===")
     except Exception as e:
