@@ -16,7 +16,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "RFL Bot Status: Live & Persistent"
+    return "RESULTS Bot Status: Live & Persistent"
 
 def run_web():
     port = int(os.getenv("PORT", 10000))
@@ -64,7 +64,7 @@ def make_circle_logo(img: Image.Image, size: tuple) -> Image.Image:
     output.paste(img, (0, 0), mask=mask)
     return output
 
-# --- ФУНКЦИЯ ГЕНЕРАЦИИ КАРТОЧКИ С ИСПРАВЛЕННЫМ РАЗМЕЩЕНИЕМ ЛОГО ---
+# --- ФУНКЦИЯ ГЕНЕРАЦИИ КАРТОЧКИ ---
 def create_433_style_card(team1: str, score1: str, team2: str, score2: str, 
                           events1: str, events2: str, bg_img: Image.Image,
                           logo1_img: Image.Image = None, logo2_img: Image.Image = None) -> io.BytesIO:
@@ -96,12 +96,10 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     draw.rounded_rectangle(card_box, radius=30, outline=(255, 255, 255, 180), width=4)
 
     # 1. Заголовок
-    draw.text((width // 2, 365), "RFL MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
+    draw.text((width // 2, 365), "RESULTS MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
 
-    # 2. Названия команд (сдвинуты немного к центру от краев)
-    # Название команды 1 (слева)
+    # 2. Названия команд
     draw.text((260, 550), team1.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
-    # Название команды 2 (справа)
     draw.text((740, 550), team2.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
 
     # 3. Счёт и Статус
@@ -124,19 +122,16 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     draw_multiline_events(events1, 260, 665)
     draw_multiline_events(events2, 740, 665)
 
-    # 🔥 6. ВСТАВЛЯЕМ ЛОГОТИПЫ В САМОМ КОНЦЕ (поверх всего текста) 🔥
-    # ПОФИШЕНО: Жесткая привязка к краям рамки, а не к тексту.
-    logo_size_val = 110 # Чуть больше, т.к. они сбоку
-    logo_y_pos = 460 # Позиция по вертикали (примерно по центру счёта)
+    # 6. ЛОГОТИПЫ В ВЕРХНЕМ ПОЛОЖЕНИИ
+    logo_size_val = 110
+    logo_y_pos = 400 
 
     if logo1_img:
         l1 = make_circle_logo(logo1_img, (logo_size_val, logo_size_val))
-        # Лого 1 прижато к ЛЕВОМУ краю рамки (frame_left + отступ)
         bg.paste(l1, (frame_left + 40, logo_y_pos), l1)
 
     if logo2_img:
         l2 = make_circle_logo(logo2_img, (logo_size_val, logo_size_val))
-        # Лого 2 прижато к ПРАВОМУ краю рамки (frame_right - ширина лого - отступ)
         bg.paste(l2, (frame_right - logo_size_val - 40, logo_y_pos), l2)
 
     buf = io.BytesIO()
@@ -214,7 +209,7 @@ class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"
             color=discord.Color.gold()
         )
         embed.add_field(name="📊 Статистика:", value=self.stats.value, inline=False)
-        embed.set_footer(text="Официальное решение RFL League")
+        embed.set_footer(text="Официальное решение RESULTS League")
         await interaction.followup.send(embed=embed)
 
 # === VIEWS (Интерактивные элементы) ===
@@ -222,7 +217,7 @@ class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"
 # КНОПКИ ПОД ГОТОВОЙ КАРТОЧКОЙ
 class MatchResultView(discord.ui.View):
     def __init__(self, team1: str, score1: str, team2: str, score2: str, events1: str, events2: str):
-        super().__init__(timeout=None) # Вечное меню
+        super().__init__(timeout=None)
         self.team1 = team1
         self.score1 = score1
         self.team2 = team2
@@ -239,18 +234,17 @@ class MatchResultView(discord.ui.View):
         )
         embed.add_field(name=f"⚽ {self.team1}", value=f"**Счёт:** {self.score1}\n\n**События:**\n{self.events1}", inline=True)
         embed.add_field(name=f"⚽ {self.team2}", value=f"**Счёт:** {self.score2}\n\n**События:**\n{self.events2}", inline=True)
-        embed.set_footer(text="Официальный протокол RFL League")
+        embed.set_footer(text="Официальный протокол RESULTS League")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @discord.ui.button(label="⭐ MVP Матча", style=discord.ButtonStyle.success, custom_id="btn_mvp")
     async def mvp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # defer() НЕЛЬЗЯ, т.к. открывается Модал
         await interaction.response.send_modal(MVPModal())
 
-# СТАРТОВАЯ ПАНЕЛЬ С КНОПКАМИ ПОСЛЕ /result (ГЛОБАЛЬНАЯ, PERSISTENT VIEW)
+# СТАРТОВАЯ ПАНЕЛЬ С КНОПКАМИ ПОСЛЕ /result
 class ResultStartView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None) # timeout=None гарантирует, что кнопки не выключаются
+        super().__init__(timeout=None)
         self.logo1_url = None
         self.logo2_url = None
         self.team1 = None
@@ -260,30 +254,27 @@ class ResultStartView(discord.ui.View):
         self.score2 = None
         self.events2 = "-"
 
-    # Жёсткие custom_id для стабильности Persistent View
-    @discord.ui.button(label="🛡️ Логотип 1", style=discord.ButtonStyle.secondary, custom_id="rfl_v2:btn_logo1", row=0)
+    @discord.ui.button(label="🛡️ Логотип 1", style=discord.ButtonStyle.secondary, custom_id="results_v2:btn_logo1", row=0)
     async def btn_logo1(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(Logo1Modal(self))
 
-    @discord.ui.button(label="🛡️ Логотип 2", style=discord.ButtonStyle.secondary, custom_id="rfl_v2:btn_logo2", row=0)
+    @discord.ui.button(label="🛡️ Логотип 2", style=discord.ButtonStyle.secondary, custom_id="results_v2:btn_logo2", row=0)
     async def btn_logo2(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(Logo2Modal(self))
 
-    @discord.ui.button(label="📝 Статистика матча", style=discord.ButtonStyle.primary, custom_id="rfl_v2:btn_match_data", row=0)
+    @discord.ui.button(label="📝 Статистика матча", style=discord.ButtonStyle.primary, custom_id="results_v2:btn_match_data", row=0)
     async def btn_match_data(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(MatchDataModal(self))
 
-    @discord.ui.button(label="🚀 Сгенерировать карточку", style=discord.ButtonStyle.success, custom_id="rfl_v2:btn_generate", row=1)
+    @discord.ui.button(label="🚀 Сгенерировать карточку", style=discord.ButtonStyle.success, custom_id="results_v2:btn_generate", row=1)
     async def btn_generate(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.team1 or not self.team2 or not self.score1 or not self.score2:
             await interaction.response.send_message("❌ Сначала заполните данные матча через кнопку **«📝 Статистика матча»**!", ephemeral=True)
             return
 
-        # 🔥 МГНОВЕННЫЙ ОТКЛИК: Убирает ошибку "не ответил вовремя"
         await interaction.response.defer()
 
         try:
-            # 🎨 ГЕНЕРАЦИЯ СЛУЧАЙНОЙ ЦВЕТОВОЙ ГАММЫ ФОНА (Неоновая подсветка)
             bg_styles = [
                 "abstract dark moody soccer stadium lights background, blue neon atmosphere, professional sports photography, 4k",
                 "abstract dark soccer stadium, fiery red neon lights background, intense atmosphere, 4k",
@@ -294,7 +285,6 @@ class ResultStartView(discord.ui.View):
             ]
             chosen_prompt = random.choice(bg_styles)
             encoded_prompt = urllib.parse.quote(chosen_prompt)
-            # Добавляем seed, чтобы ИИ реально каждый раз рисовал разное
             bg_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true&seed={random.randint(1, 999999)}"
 
             bg_img = await fetch_image(bg_url)
@@ -304,7 +294,6 @@ class ResultStartView(discord.ui.View):
             logo1_img = await fetch_image(self.logo1_url) if self.logo1_url else None
             logo2_img = await fetch_image(self.logo2_url) if self.logo2_url else None
 
-            # Генерируем карточку в потоке, чтобы не вешать бота
             loop = asyncio.get_running_loop()
             card_buf = await loop.run_in_executor(
                 None, create_433_style_card, 
@@ -314,7 +303,7 @@ class ResultStartView(discord.ui.View):
                 bg_img, logo1_img, logo2_img
             )
 
-            file = discord.File(fp=card_buf, filename="rfl_match_result.png")
+            file = discord.File(fp=card_buf, filename="results_match_result.png")
             
             view = MatchResultView(
                 self.team1, self.score1, 
@@ -323,7 +312,7 @@ class ResultStartView(discord.ui.View):
             )
 
             await interaction.followup.send(
-                content=f"🚨 **RFL MATCH RESULT** | {self.team1} vs {self.team2}",
+                content=f"🚨 **RESULTS MATCH RESULT** | {self.team1} vs {self.team2}",
                 file=file,
                 view=view
             )
@@ -332,12 +321,11 @@ class ResultStartView(discord.ui.View):
 
 # === BOT EVENTS & COMMANDS ===
 
-# 🔥 ТОЛЬКО ДЛЯ АДМИНИСТРАТОРОВ СЕРВЕРА 🔥
-@bot.tree.command(name="result", description="Центр управления матчем RFL (Только для Администраторов)")
+@bot.tree.command(name="result", description="Центр управления матчем RESULTS (Только для Администраторов)")
 @app_commands.checks.has_permissions(administrator=True)
 async def result(interaction: discord.Interaction):
     embed = discord.Embed(
-        title="⚽ Центр управления RFL",
+        title="⚽ Центр управления RESULTS",
         description=(
             "Заполните информацию о прошедшем матче перед публикацией:\n\n"
             "1️⃣ **`🛡️ Логотип`** — отправьте эмблемы в Discord, скопируйте ссылки на них и вставьте.\n"
@@ -346,24 +334,21 @@ async def result(interaction: discord.Interaction):
         ),
         color=discord.Color.blue()
     )
-    embed.set_footer(text="RFL Result System v2.0")
-    # Используем persistent view instance
+    embed.set_footer(text="RESULTS System v2.0")
     await interaction.response.send_message(embed=embed, view=ResultStartView(), ephemeral=True)
 
-# ОБРАБОТЧИК ОШИБОК СЛЕШ-КОМАНД (для проверки прав админа)
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
         await interaction.response.send_message("❌ У вас нет прав **Администратора** для использования этой команды!", ephemeral=True)
     else:
-        # Логируем другие ошибки в консоль
         print(f"Ошибка команды: {error}")
 
-@bot.tree.command(name="help", description="Полная инструкция и возможности RFL Bot")
+@bot.tree.command(name="help", description="Полная инструкция и возможности RESULTS Bot")
 async def help_command(interaction: discord.Interaction):
     embed = discord.Embed(
-        title="🤖 Помощник RFL League Bot",
-        description="Добро пожаловать! Этот бот предназначен для стильного оформления результатов футбольных матчей лиги RFL.",
+        title="🤖 Помощник RESULTS League Bot",
+        description="Добро пожаловать! Этот бот предназначен для стильного оформления результатов футбольных матчей.",
         color=discord.Color.gold()
     )
     
@@ -376,15 +361,12 @@ async def help_command(interaction: discord.Interaction):
         inline=False
     )
 
-    embed.set_footer(text="Создано специально для лиги RFL ⚽")
+    embed.set_footer(text="Создано специально для RESULTS ⚽")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.event
 async def on_ready():
     print(f"=== БОТ ЗАПУЩЕН: {bot.user} ===")
-    
-    # ФОРСИРОВАННАЯ РЕГИСТРАЦИЯ PERSISTENT VIEWS ПРИ СТАРТЕ!
-    # Чтобы бот помнил кнопки даже после перезапуска на Render
     bot.add_view(ResultStartView())
     
     try:
@@ -393,14 +375,11 @@ async def on_ready():
     except Exception as e:
         print(f"Ошибка синхронизации команд: {e}")
 
-# Получение токена из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
 
 if __name__ == "__main__":
     if TOKEN:
-        # Сначала запускаем веб-сервер keep_alive
         keep_alive()
-        # Затем запускаем Discord бота
         bot.run(TOKEN)
     else:
         print("ОШИБКА: Переменная BOT_TOKEN не найдена!")
