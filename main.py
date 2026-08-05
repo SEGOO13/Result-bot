@@ -2,6 +2,7 @@ import os
 import io
 import asyncio
 import random
+import urllib.parse
 import threading
 import sqlite3
 from datetime import datetime
@@ -13,7 +14,7 @@ from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
 from openai import AsyncOpenAI
 
-# --- ИНИЦИАЛИЗА OPENAI КЛИЕНТА (ИСПРАВЛЕНО: Безопасная инициализация) ---
+# --- ИНИЦИАЛИЗА OPENAI КЛИЕНТА ---
 api_key = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(api_key=api_key) if api_key else None
 
@@ -93,33 +94,40 @@ async def fetch_image(url: str) -> Image.Image:
         print(f"Ошибка загрузки картинки: {e}")
     return None
 
-async def generate_openai_background() -> Image.Image:
-    """Генерация футбольного фона через OpenAI DALL-E 3"""
-    if not openai_client:
-        print("Предупреждение: OPENAI_API_KEY не установлен в переменные окружения Render!")
-        return None
-
-    prompts = [
+async def generate_football_background() -> Image.Image:
+    """Генерация футбольного фона (OpenAI или бесплатный авто-фоллбек)"""
+    prompts_en = [
         "A cinematic background of a Premier League football stadium at night with bright floodlights, dark atmospheric tone, high quality photo, no text, empty pitch",
         "A close-up view of dark green soccer pitch grass under stadium lights at night, cinematic lighting, blurry background, professional sports photography, no text",
         "An epic Champions League football stadium background at night, blue and violet neon lights, dark atmospheric, pitch level view, cinematic, no text",
         "A modern soccer arena background with intense matchday lighting, foggy atmosphere, dark aesthetics, 4k sports photo, no text"
     ]
-    chosen_prompt = random.choice(prompts)
+    chosen_prompt = random.choice(prompts_en)
+
+    # 1. Пробуем сгенерировать через OpenAI
+    if openai_client:
+        try:
+            response = await openai_client.images.generate(
+                model="dall-e-3",
+                prompt=chosen_prompt,
+                size="1024x1024",
+                quality="standard",
+                n=1,
+            )
+            img_url = response.data[0].url
+            img = await fetch_image(img_url)
+            if img:
+                return img
+        except Exception as e:
+            print(f"Ошибка OpenAI DALL-E (переключаемся на резервный генератор): {e}")
+
+    # 2. Если OpenAI ключа нет или произошла ошибка — генерируем через Pollinations AI
+    encoded_prompt = urllib.parse.quote(chosen_prompt)
+    unique_seed = random.randint(1, 999999)
+    fallback_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true&seed={unique_seed}"
     
-    try:
-        response = await openai_client.images.generate(
-            model="dall-e-3",
-            prompt=chosen_prompt,
-            size="1024x1024",
-            quality="standard",
-            n=1,
-        )
-        img_url = response.data[0].url
-        return await fetch_image(img_url)
-    except Exception as e:
-        print(f"Ошибка OpenAI DALL-E: {e}")
-        return None
+    img = await fetch_image(fallback_url)
+    return img
 
 def get_font(size: int):
     try:
@@ -147,9 +155,12 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
                           logo1_img: Image.Image = None, logo2_img: Image.Image = None) -> io.BytesIO:
     
     width, height = 1000, 1000
-    bg = bg_img.resize((width, height)).convert("RGBA")
+    if bg_img:
+        bg = bg_img.resize((width, height)).convert("RGBA")
+    else:
+        bg = Image.new("RGBA", (width, height), (10, 15, 25))
 
-    # Тёмный оверлей для идеальной читаемости
+    # Тёмный оверлей для читаемости
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     overlay_draw.rectangle([(0, 0), (width, height)], fill=(10, 15, 25, 180))
@@ -352,10 +363,8 @@ class ResultStartView(discord.ui.View):
         try:
             save_match_to_db(self.team1, self.score1, self.team2, self.score2, self.events1, self.events2)
 
-            # Генерация через OpenAI DALL-E 3
-            bg_img = await generate_openai_background()
-            if not bg_img:
-                bg_img = Image.new("RGBA", (1000, 1000), (10, 15, 25))
+            # Автоматическая генерация футбольного фона
+            bg_img = await generate_football_background()
 
             logo1_img = await fetch_image(self.logo1_url) if self.logo1_url else None
             logo2_img = await fetch_image(self.logo2_url) if self.logo2_url else None
