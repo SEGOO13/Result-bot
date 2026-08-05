@@ -2,7 +2,6 @@ import os
 import io
 import asyncio
 import random
-import math
 import threading
 import sqlite3
 from datetime import datetime
@@ -86,44 +85,37 @@ async def fetch_image(url: str) -> Image.Image:
                     data = await response.read()
                     return Image.open(io.BytesIO(data)).convert("RGBA")
     except Exception as e:
-        print(f"Ошибка загрузки логотипа: {e}")
+        print(f"Ошибка загрузки картинки: {e}")
     return None
 
-def generate_stadium_background(width: int = 1000, height: int = 1000) -> Image.Image:
-    """Полностью локальная генерация футбольного фона с градиентом и прожекторами"""
-    # Base background (тёмно-синий/изумрудный футбольный градиент)
-    base = Image.new("RGBA", (width, height), (12, 18, 30, 255))
-    draw = ImageDraw.Draw(base)
-
-    # 1. Радиальный прожектор по центру/верхним углам
+def draw_stadium_bg(width: int = 1000, height: int = 1000) -> Image.Image:
+    """Локальная быстрая генерация футбольного фона"""
+    bg = Image.new("RGBA", (width, height), (10, 18, 32, 255))
+    
+    # Слой со светом прожекторов
     light_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    light_draw = ImageDraw.Draw(light_layer)
+    ldraw = ImageDraw.Draw(light_layer)
     
-    # Свет прожекторов сверху
-    light_draw.ellipse((-100, -200, 1100, 600), fill=(20, 60, 100, 120))
-    light_draw.ellipse((100, 200, 900, 900), fill=(10, 45, 80, 80))
+    # Мощный свет сверху по центру
+    ldraw.ellipse((-100, -300, 1100, 500), fill=(30, 90, 180, 140))
+    ldraw.ellipse((150, 100, 850, 700), fill=(20, 140, 220, 90))
+    # Зеленый отблеск поля снизу
+    ldraw.ellipse((-100, 650, 1100, 1200), fill=(16, 85, 50, 110))
     
-    # Легкий зелёный отблеск газона снизу
-    light_draw.ellipse((-200, 700, 1200, 1300), fill=(10, 50, 35, 90))
-    
-    # Размытие света
-    light_layer = light_layer.filter(ImageFilter.GaussianBlur(100))
-    base = Image.alpha_composite(base, light_layer)
+    light_layer = light_layer.filter(ImageFilter.GaussianBlur(80))
+    bg = Image.alpha_composite(bg, light_layer)
 
-    # 2. Легкая геометрия стадиона (круги и линии разметки)
+    # Поле и центральный круг
     lines_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     lines_draw = ImageDraw.Draw(lines_layer)
+    lines_draw.ellipse((200, 200, 800, 800), outline=(255, 255, 255, 45), width=4)
+    lines_draw.ellipse((480, 480, 520, 520), fill=(255, 255, 255, 50))
+    lines_draw.line([(0, 500), (1000, 500)], fill=(255, 255, 255, 35), width=3)
     
-    # Центральный круг
-    lines_draw.ellipse((250, 250, 750, 750), outline=(255, 255, 255, 25), width=3)
-    lines_draw.ellipse((480, 480, 520, 520), fill=(255, 255, 255, 30))
-    # Линии
-    lines_draw.line([(0, 500), (1000, 500)], fill=(255, 255, 255, 20), width=3)
-
-    lines_layer = lines_layer.filter(ImageFilter.GaussianBlur(3))
-    base = Image.alpha_composite(base, lines_layer)
-
-    return base
+    lines_layer = lines_layer.filter(ImageFilter.GaussianBlur(2))
+    bg = Image.alpha_composite(bg, lines_layer)
+    
+    return bg
 
 def get_font(size: int):
     try:
@@ -135,7 +127,7 @@ def get_font(size: int):
             return ImageFont.load_default()
 
 def make_circle_logo(img: Image.Image, size: tuple) -> Image.Image:
-    """Обрезка логотипа в ровный круг с антиалиасингом"""
+    """Обрезка логотипа в круг"""
     img = img.resize(size, Image.Resampling.LANCZOS).convert("RGBA")
     mask = Image.new('L', size, 0)
     draw = ImageDraw.Draw(mask)
@@ -151,13 +143,8 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
                           logo1_img: Image.Image = None, logo2_img: Image.Image = None) -> io.BytesIO:
     
     width, height = 1000, 1000
-    bg = generate_stadium_background(width, height)
+    bg = draw_stadium_bg(width, height)
 
-    # Тёмный полупрозрачный оверлей
-    overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    overlay_draw = ImageDraw.Draw(overlay)
-    overlay_draw.rectangle([(0, 0), (width, height)], fill=(5, 10, 20, 140))
-    bg = Image.alpha_composite(bg, overlay)
     draw = ImageDraw.Draw(bg)
 
     font_title = get_font(30)
@@ -173,8 +160,8 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     frame_right = 950
     card_box = [(frame_left, 320), (frame_right, 950)]
     
-    # Карточка со стеклянным эффектом
-    draw.rounded_rectangle(card_box, radius=30, fill=(15, 23, 42, 190), outline=(255, 255, 255, 180), width=4)
+    # Тёмная полупрозрачная рамка
+    draw.rounded_rectangle(card_box, radius=30, fill=(8, 14, 26, 210), outline=(255, 255, 255, 180), width=4)
 
     # 1. Заголовок
     draw.text((width // 2, 365), "RESULTS MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
