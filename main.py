@@ -5,6 +5,7 @@ import random
 import urllib.parse
 import threading
 import sqlite3
+import time
 from datetime import datetime
 from flask import Flask
 import aiohttp
@@ -331,7 +332,12 @@ class ResultStartView(discord.ui.View):
             ]
             chosen_prompt = random.choice(bg_styles)
             encoded_prompt = urllib.parse.quote(chosen_prompt)
-            bg_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true&seed={random.randint(1, 999999)}"
+            
+            # Генерация уникальных данных для сброса кеша при каждом вызове
+            unique_seed = random.randint(100000, 9999999)
+            time_stamp = int(time.time() * 1000)
+            
+            bg_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true&seed={unique_seed}&t={time_stamp}"
 
             bg_img = await fetch_image(bg_url)
             if not bg_img:
