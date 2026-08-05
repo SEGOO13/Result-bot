@@ -2,7 +2,7 @@ import os
 import io
 import asyncio
 import random
-import urllib.parse
+import math
 import threading
 import sqlite3
 from datetime import datetime
@@ -11,12 +11,7 @@ import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
-from PIL import Image, ImageDraw, ImageFont
-from openai import AsyncOpenAI
-
-# --- ИНИЦИАЛИЗА OPENAI КЛИЕНТА ---
-api_key = os.getenv("OPENAI_API_KEY")
-openai_client = AsyncOpenAI(api_key=api_key) if api_key else None
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 # --- ИНИЦИАЛИЗА БАЗЫ ДАННЫХ (SQLite) ---
 DB_NAME = "matches.db"
@@ -91,43 +86,44 @@ async def fetch_image(url: str) -> Image.Image:
                     data = await response.read()
                     return Image.open(io.BytesIO(data)).convert("RGBA")
     except Exception as e:
-        print(f"Ошибка загрузки картинки: {e}")
+        print(f"Ошибка загрузки логотипа: {e}")
     return None
 
-async def generate_football_background() -> Image.Image:
-    """Генерация футбольного фона (OpenAI или бесплатный авто-фоллбек)"""
-    prompts_en = [
-        "A cinematic background of a Premier League football stadium at night with bright floodlights, dark atmospheric tone, high quality photo, no text, empty pitch",
-        "A close-up view of dark green soccer pitch grass under stadium lights at night, cinematic lighting, blurry background, professional sports photography, no text",
-        "An epic Champions League football stadium background at night, blue and violet neon lights, dark atmospheric, pitch level view, cinematic, no text",
-        "A modern soccer arena background with intense matchday lighting, foggy atmosphere, dark aesthetics, 4k sports photo, no text"
-    ]
-    chosen_prompt = random.choice(prompts_en)
+def generate_stadium_background(width: int = 1000, height: int = 1000) -> Image.Image:
+    """Полностью локальная генерация футбольного фона с градиентом и прожекторами"""
+    # Base background (тёмно-синий/изумрудный футбольный градиент)
+    base = Image.new("RGBA", (width, height), (12, 18, 30, 255))
+    draw = ImageDraw.Draw(base)
 
-    # 1. Пробуем сгенерировать через OpenAI
-    if openai_client:
-        try:
-            response = await openai_client.images.generate(
-                model="dall-e-3",
-                prompt=chosen_prompt,
-                size="1024x1024",
-                quality="standard",
-                n=1,
-            )
-            img_url = response.data[0].url
-            img = await fetch_image(img_url)
-            if img:
-                return img
-        except Exception as e:
-            print(f"Ошибка OpenAI DALL-E (переключаемся на резервный генератор): {e}")
-
-    # 2. Если OpenAI ключа нет или произошла ошибка — генерируем через Pollinations AI
-    encoded_prompt = urllib.parse.quote(chosen_prompt)
-    unique_seed = random.randint(1, 999999)
-    fallback_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true&seed={unique_seed}"
+    # 1. Радиальный прожектор по центру/верхним углам
+    light_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    light_draw = ImageDraw.Draw(light_layer)
     
-    img = await fetch_image(fallback_url)
-    return img
+    # Свет прожекторов сверху
+    light_draw.ellipse((-100, -200, 1100, 600), fill=(20, 60, 100, 120))
+    light_draw.ellipse((100, 200, 900, 900), fill=(10, 45, 80, 80))
+    
+    # Легкий зелёный отблеск газона снизу
+    light_draw.ellipse((-200, 700, 1200, 1300), fill=(10, 50, 35, 90))
+    
+    # Размытие света
+    light_layer = light_layer.filter(ImageFilter.GaussianBlur(100))
+    base = Image.alpha_composite(base, light_layer)
+
+    # 2. Легкая геометрия стадиона (круги и линии разметки)
+    lines_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    lines_draw = ImageDraw.Draw(lines_layer)
+    
+    # Центральный круг
+    lines_draw.ellipse((250, 250, 750, 750), outline=(255, 255, 255, 25), width=3)
+    lines_draw.ellipse((480, 480, 520, 520), fill=(255, 255, 255, 30))
+    # Линии
+    lines_draw.line([(0, 500), (1000, 500)], fill=(255, 255, 255, 20), width=3)
+
+    lines_layer = lines_layer.filter(ImageFilter.GaussianBlur(3))
+    base = Image.alpha_composite(base, lines_layer)
+
+    return base
 
 def get_font(size: int):
     try:
@@ -151,19 +147,16 @@ def make_circle_logo(img: Image.Image, size: tuple) -> Image.Image:
 
 # --- ФУНКЦИЯ ГЕНЕРАЦИИ КАРТОЧКИ ---
 def create_433_style_card(team1: str, score1: str, team2: str, score2: str, 
-                          events1: str, events2: str, bg_img: Image.Image,
+                          events1: str, events2: str,
                           logo1_img: Image.Image = None, logo2_img: Image.Image = None) -> io.BytesIO:
     
     width, height = 1000, 1000
-    if bg_img:
-        bg = bg_img.resize((width, height)).convert("RGBA")
-    else:
-        bg = Image.new("RGBA", (width, height), (10, 15, 25))
+    bg = generate_stadium_background(width, height)
 
-    # Тёмный оверлей для читаемости
+    # Тёмный полупрозрачный оверлей
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
-    overlay_draw.rectangle([(0, 0), (width, height)], fill=(10, 15, 25, 180))
+    overlay_draw.rectangle([(0, 0), (width, height)], fill=(5, 10, 20, 140))
     bg = Image.alpha_composite(bg, overlay)
     draw = ImageDraw.Draw(bg)
 
@@ -179,7 +172,9 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     frame_left = 50
     frame_right = 950
     card_box = [(frame_left, 320), (frame_right, 950)]
-    draw.rounded_rectangle(card_box, radius=30, outline=(255, 255, 255, 180), width=4)
+    
+    # Карточка со стеклянным эффектом
+    draw.rounded_rectangle(card_box, radius=30, fill=(15, 23, 42, 190), outline=(255, 255, 255, 180), width=4)
 
     # 1. Заголовок
     draw.text((width // 2, 365), "RESULTS MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
@@ -363,9 +358,6 @@ class ResultStartView(discord.ui.View):
         try:
             save_match_to_db(self.team1, self.score1, self.team2, self.score2, self.events1, self.events2)
 
-            # Автоматическая генерация футбольного фона
-            bg_img = await generate_football_background()
-
             logo1_img = await fetch_image(self.logo1_url) if self.logo1_url else None
             logo2_img = await fetch_image(self.logo2_url) if self.logo2_url else None
 
@@ -375,7 +367,7 @@ class ResultStartView(discord.ui.View):
                 self.team1, self.score1, 
                 self.team2, self.score2, 
                 self.events1, self.events2, 
-                bg_img, logo1_img, logo2_img
+                logo1_img, logo2_img
             )
 
             file = discord.File(fp=card_buf, filename="results_match_result.png")
