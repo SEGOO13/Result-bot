@@ -5,7 +5,6 @@ import random
 import urllib.parse
 import threading
 import sqlite3
-import time
 from datetime import datetime
 from flask import Flask
 import aiohttp
@@ -54,7 +53,6 @@ def get_recent_matches(limit: int = 5):
     conn.close()
     return rows
 
-# Запускаем создание базы при старте
 init_db()
 
 # --- ВЕБ-СЕРВЕР ДЛЯ RENDER (Keep Alive) ---
@@ -81,8 +79,9 @@ async def fetch_image(url: str) -> Image.Image:
     if not url or not url.startswith("http"):
         return None
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as response:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as response:
                 if response.status == 200:
                     data = await response.read()
                     return Image.open(io.BytesIO(data)).convert("RGBA")
@@ -118,21 +117,21 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     width, height = 1000, 1000
     bg = bg_img.resize((width, height)).convert("RGBA")
 
-    # Тёмный оверлей
+    # Тёмный оверлей для читаемости
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
-    overlay_draw.rectangle([(0, 250), (width, height)], fill=(10, 15, 25, 230))
+    overlay_draw.rectangle([(0, 0), (width, height)], fill=(10, 15, 25, 180))
     bg = Image.alpha_composite(bg, overlay)
     draw = ImageDraw.Draw(bg)
 
-    font_title = get_font(32)
-    font_team = get_font(36)
-    font_status = get_font(28)
+    font_title = get_font(30)
+    font_team = get_font(30) # Чуть уменьшили, чтобы не вылезал
+    font_status = get_font(26)
     font_events = get_font(20)
 
     # ДИНАМИЧЕСКИЙ РАЗМЕР ШРИФТА ДЛЯ СЧЁТА
     score_text = f"{score1}  -  {score2}"
-    score_font_size = 110 if len(score_text) <= 7 else 70
+    score_font_size = 95 if len(score_text) <= 7 else 65
     font_score = get_font(score_font_size)
 
     # Константы рамки
@@ -144,18 +143,20 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     # 1. Заголовок
     draw.text((width // 2, 365), "RESULTS MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
 
-    # 2. Названия команд
-    draw.text((260, 550), team1.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
-    draw.text((740, 550), team2.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
+    # 2. Счёт (Подняли выше на Y=460)
+    draw.text((width // 2, 460), score_text, fill=(255, 255, 255), font=font_score, anchor="mm")
 
-    # 3. Счёт и Статус
-    draw.text((width // 2, 500), score_text, fill=(255, 255, 255), font=font_score, anchor="mm")
-    draw.text((width // 2, 590), "FULL-TIME", fill=(234, 179, 8), font=font_status, anchor="mm")
+    # 3. Названия команд (Опустили ниже на Y=560)
+    draw.text((260, 560), team1.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
+    draw.text((740, 560), team2.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
 
-    # 4. Разделительная линия
-    draw.line([(100, 630), (900, 630)], fill=(255, 255, 255, 80), width=2)
+    # 4. Статус
+    draw.text((width // 2, 600), "FULL-TIME", fill=(234, 179, 8), font=font_status, anchor="mm")
 
-    # 5. Авторы голов
+    # 5. Разделительная линия
+    draw.line([(100, 640), (900, 640)], fill=(255, 255, 255, 80), width=2)
+
+    # 6. Авторы голов
     def draw_multiline_events(text, center_x, start_y):
         lines = text.split(',')
         current_y = start_y
@@ -165,12 +166,12 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
                 draw.text((center_x, current_y), clean_line, fill=(220, 220, 220), font=font_events, anchor="mm")
                 current_y += 30
 
-    draw_multiline_events(events1, 260, 665)
-    draw_multiline_events(events2, 740, 665)
+    draw_multiline_events(events1, 260, 675)
+    draw_multiline_events(events2, 740, 675)
 
-    # 6. ЛОГОТИПЫ В ВЕРХНЕМ ПОЛОЖЕНИИ
+    # 7. ЛОГОТИПЫ В ВЕРХНЕМ ПОЛОЖЕНИИ
     logo_size_val = 110
-    logo_y_pos = 400 
+    logo_y_pos = 410 
 
     if logo1_img:
         l1 = make_circle_logo(logo1_img, (logo_size_val, logo_size_val))
@@ -319,29 +320,18 @@ class ResultStartView(discord.ui.View):
         await interaction.response.defer()
 
         try:
-            # Сохранение в базу данных
             save_match_to_db(self.team1, self.score1, self.team2, self.score2, self.events1, self.events2)
 
-            bg_styles = [
-                "abstract dark moody soccer stadium lights background, blue neon atmosphere, professional sports photography, 4k",
-                "abstract dark soccer stadium, fiery red neon lights background, intense atmosphere, 4k",
-                "abstract dark stadium, golden yellow lighting background, epic champions atmosphere, 4k",
-                "abstract dark stadium, deep purple violet neon background, modern matchday style, 4k",
-                "abstract dark stadium, emerald green neon lights background, clean sports design, 4k",
-                "abstract futuristic soccer stadium, cyan blue and orange neon light background, 4k"
-            ]
-            chosen_prompt = random.choice(bg_styles)
-            encoded_prompt = urllib.parse.quote(chosen_prompt)
-            
-            # Генерация уникальных данных для сброса кеша при каждом вызове
-            unique_seed = random.randint(100000, 9999999)
-            time_stamp = int(time.time() * 1000)
-            
-            bg_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1000&height=1000&nologo=true&seed={unique_seed}&t={time_stamp}"
+            # Надёжный источник фонов (Unsplash - каждый раз новый случайный стадион)
+            bg_url = f"https://source.unsplash.com/1000x1000/?stadium,soccer,stadium-lights&sig={random.randint(1, 999999)}"
 
             bg_img = await fetch_image(bg_url)
             if not bg_img:
-                bg_img = Image.new("RGBA", (1000, 1000), (15, 23, 42))
+                # Резервный источник, если Unsplash сбойнет
+                bg_url_alt = f"https://picsum.photos/1000/1000?random={random.randint(1, 99999)}"
+                bg_img = await fetch_image(bg_url_alt)
+                if not bg_img:
+                    bg_img = Image.new("RGBA", (1000, 1000), (15, 23, 42))
 
             logo1_img = await fetch_image(self.logo1_url) if self.logo1_url else None
             logo2_img = await fetch_image(self.logo2_url) if self.logo2_url else None
