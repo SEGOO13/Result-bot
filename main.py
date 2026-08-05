@@ -2,7 +2,6 @@ import os
 import io
 import asyncio
 import random
-import urllib.parse
 import threading
 import sqlite3
 from datetime import datetime
@@ -12,6 +11,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
+from openai import AsyncOpenAI
+
+# --- ИНИЦИАЛИЗА OPENAI КЛИЕНТА ---
+openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # --- ИНИЦИАЛИЗА БАЗЫ ДАННЫХ (SQLite) ---
 DB_NAME = "matches.db"
@@ -81,13 +84,37 @@ async def fetch_image(url: str) -> Image.Image:
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as response:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as response:
                 if response.status == 200:
                     data = await response.read()
                     return Image.open(io.BytesIO(data)).convert("RGBA")
     except Exception as e:
         print(f"Ошибка загрузки картинки: {e}")
     return None
+
+async def generate_openai_background() -> Image.Image:
+    """Генерация футбольного фона через OpenAI DALL-E 3"""
+    prompts = [
+        "A cinematic, moody background of a Premier League football stadium at night with bright floodlights, dark atmospheric tone, high quality photo, no text, empty pitch",
+        "A close-up view of dark green soccer pitch grass under stadium lights at night, cinematic lighting, blurry background, professional sports photography, no text",
+        "An epic Champions League football stadium background at night, blue and violet neon lights, dark atmospheric, pitch level view, cinematic, no text",
+        "A modern soccer arena background with intense matchday lighting, foggy atmosphere, dark aesthetics, 4k sports photo, no text"
+    ]
+    chosen_prompt = random.choice(prompts)
+    
+    try:
+        response = await openai_client.images.generate(
+            model="dall-e-3",
+            prompt=chosen_prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+        img_url = response.data[0].url
+        return await fetch_image(img_url)
+    except Exception as e:
+        print(f"Ошибка OpenAI DALL-E: {e}")
+        return None
 
 def get_font(size: int):
     try:
@@ -117,7 +144,7 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     width, height = 1000, 1000
     bg = bg_img.resize((width, height)).convert("RGBA")
 
-    # Тёмный оверлей для читаемости
+    # Тёмный оверлей для идеальной читаемости
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     overlay_draw.rectangle([(0, 0), (width, height)], fill=(10, 15, 25, 180))
@@ -125,16 +152,14 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     draw = ImageDraw.Draw(bg)
 
     font_title = get_font(30)
-    font_team = get_font(30) # Чуть уменьшили, чтобы не вылезал
+    font_team = get_font(30)
     font_status = get_font(26)
     font_events = get_font(20)
 
-    # ДИНАМИЧЕСКИЙ РАЗМЕР ШРИФТА ДЛЯ СЧЁТА
     score_text = f"{score1}  -  {score2}"
     score_font_size = 95 if len(score_text) <= 7 else 65
     font_score = get_font(score_font_size)
 
-    # Константы рамки
     frame_left = 50
     frame_right = 950
     card_box = [(frame_left, 320), (frame_right, 950)]
@@ -143,20 +168,20 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     # 1. Заголовок
     draw.text((width // 2, 365), "RESULTS MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
 
-    # 2. Счёт (Подняли выше на Y=460)
+    # 2. Счёт
     draw.text((width // 2, 460), score_text, fill=(255, 255, 255), font=font_score, anchor="mm")
 
-    # 3. Названия команд (Опустили ниже на Y=560)
+    # 3. Команды
     draw.text((260, 560), team1.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
     draw.text((740, 560), team2.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
 
     # 4. Статус
     draw.text((width // 2, 600), "FULL-TIME", fill=(234, 179, 8), font=font_status, anchor="mm")
 
-    # 5. Разделительная линия
+    # 5. Разделитель
     draw.line([(100, 640), (900, 640)], fill=(255, 255, 255, 80), width=2)
 
-    # 6. Авторы голов
+    # 6. Голы
     def draw_multiline_events(text, center_x, start_y):
         lines = text.split(',')
         current_y = start_y
@@ -169,7 +194,7 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     draw_multiline_events(events1, 260, 675)
     draw_multiline_events(events2, 740, 675)
 
-    # 7. ЛОГОТИПЫ В ВЕРХНЕМ ПОЛОЖЕНИИ
+    # 7. Логотипы
     logo_size_val = 110
     logo_y_pos = 410 
 
@@ -322,16 +347,10 @@ class ResultStartView(discord.ui.View):
         try:
             save_match_to_db(self.team1, self.score1, self.team2, self.score2, self.events1, self.events2)
 
-            # Надёжный источник фонов (Unsplash - каждый раз новый случайный стадион)
-            bg_url = f"https://source.unsplash.com/1000x1000/?stadium,soccer,stadium-lights&sig={random.randint(1, 999999)}"
-
-            bg_img = await fetch_image(bg_url)
+            # Генерация через OpenAI DALL-E 3
+            bg_img = await generate_openai_background()
             if not bg_img:
-                # Резервный источник, если Unsplash сбойнет
-                bg_url_alt = f"https://picsum.photos/1000/1000?random={random.randint(1, 99999)}"
-                bg_img = await fetch_image(bg_url_alt)
-                if not bg_img:
-                    bg_img = Image.new("RGBA", (1000, 1000), (15, 23, 42))
+                bg_img = Image.new("RGBA", (1000, 1000), (10, 15, 25))
 
             logo1_img = await fetch_image(self.logo1_url) if self.logo1_url else None
             logo2_img = await fetch_image(self.logo2_url) if self.logo2_url else None
