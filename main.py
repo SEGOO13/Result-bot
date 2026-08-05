@@ -89,32 +89,46 @@ async def fetch_image(url: str) -> Image.Image:
     return None
 
 def draw_stadium_bg(width: int = 1000, height: int = 1000) -> Image.Image:
-    """Локальная быстрая генерация футбольного фона"""
-    bg = Image.new("RGBA", (width, height), (10, 18, 32, 255))
+    """Генерация футбольной арены со случайными цветовыми темами"""
     
-    # Слой со светом прожекторов
+    # Наборы рандомных палитр (основной цвет, верхний прожектор, нижний отблеск)
+    PALETTES = [
+        # Blue Stadium
+        {"bg": (8, 15, 30, 255), "light1": (0, 142, 255, 180), "light2": (10, 160, 70, 160)},
+        # Purple Neon
+        {"bg": (20, 10, 35, 255), "light1": (160, 32, 240, 180), "light2": (230, 0, 120, 150)},
+        # Champions Red
+        {"bg": (30, 10, 15, 255), "light1": (240, 40, 40, 180), "light2": (255, 140, 0, 150)},
+        # Gold Champions
+        {"bg": (25, 20, 10, 255), "light1": (245, 180, 0, 180), "light2": (180, 100, 0, 150)},
+        # Classic Teal/Grass
+        {"bg": (5, 25, 20, 255), "light1": (0, 200, 160, 180), "light2": (15, 140, 60, 160)}
+    ]
+
+    theme = random.choice(PALETTES)
+
+    bg = Image.new("RGBA", (width, height), theme["bg"])
+    
+    # Слой света прожекторов
     light_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     ldraw = ImageDraw.Draw(light_layer)
     
-    # Мощный свет сверху по центру
-    ldraw.ellipse((-100, -300, 1100, 500), fill=(30, 90, 180, 140))
-    ldraw.ellipse((150, 100, 850, 700), fill=(20, 140, 220, 90))
-    # Зеленый отблеск поля снизу
-    ldraw.ellipse((-100, 650, 1100, 1200), fill=(16, 85, 50, 110))
+    # Прожекторы сверху и свечение снизу
+    ldraw.ellipse((-150, -250, 1150, 550), fill=theme["light1"])
+    ldraw.ellipse((-200, 550, 1200, 1200), fill=theme["light2"])
     
-    light_layer = light_layer.filter(ImageFilter.GaussianBlur(80))
+    # Размытие света
+    light_layer = light_layer.filter(ImageFilter.GaussianBlur(65))
     bg = Image.alpha_composite(bg, light_layer)
 
-    # Поле и центральный круг
+    # Разметка поля (линии и круг)
     lines_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     lines_draw = ImageDraw.Draw(lines_layer)
-    lines_draw.ellipse((200, 200, 800, 800), outline=(255, 255, 255, 45), width=4)
-    lines_draw.ellipse((480, 480, 520, 520), fill=(255, 255, 255, 50))
-    lines_draw.line([(0, 500), (1000, 500)], fill=(255, 255, 255, 35), width=3)
+    lines_draw.ellipse((200, 200, 800, 800), outline=(255, 255, 255, 80), width=4)
+    lines_draw.ellipse((485, 485, 515, 515), fill=(255, 255, 255, 120))
+    lines_draw.line([(0, 500), (1000, 500)], fill=(255, 255, 255, 70), width=3)
     
-    lines_layer = lines_layer.filter(ImageFilter.GaussianBlur(2))
     bg = Image.alpha_composite(bg, lines_layer)
-    
     return bg
 
 def get_font(size: int):
@@ -160,8 +174,8 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     frame_right = 950
     card_box = [(frame_left, 320), (frame_right, 950)]
     
-    # Тёмная полупрозрачная рамка
-    draw.rounded_rectangle(card_box, radius=30, fill=(8, 14, 26, 210), outline=(255, 255, 255, 180), width=4)
+    # Полупрозрачная темная плашка под контент
+    draw.rounded_rectangle(card_box, radius=30, fill=(8, 14, 26, 170), outline=(255, 255, 255, 180), width=4)
 
     # 1. Заголовок
     draw.text((width // 2, 365), "RESULTS MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
