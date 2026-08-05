@@ -13,8 +13,9 @@ from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
 from openai import AsyncOpenAI
 
-# --- ИНИЦИАЛИЗА OPENAI КЛИЕНТА ---
-openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# --- ИНИЦИАЛИЗА OPENAI КЛИЕНТА (ИСПРАВЛЕНО: Безопасная инициализация) ---
+api_key = os.getenv("OPENAI_API_KEY")
+openai_client = AsyncOpenAI(api_key=api_key) if api_key else None
 
 # --- ИНИЦИАЛИЗА БАЗЫ ДАННЫХ (SQLite) ---
 DB_NAME = "matches.db"
@@ -94,8 +95,12 @@ async def fetch_image(url: str) -> Image.Image:
 
 async def generate_openai_background() -> Image.Image:
     """Генерация футбольного фона через OpenAI DALL-E 3"""
+    if not openai_client:
+        print("Предупреждение: OPENAI_API_KEY не установлен в переменные окружения Render!")
+        return None
+
     prompts = [
-        "A cinematic, moody background of a Premier League football stadium at night with bright floodlights, dark atmospheric tone, high quality photo, no text, empty pitch",
+        "A cinematic background of a Premier League football stadium at night with bright floodlights, dark atmospheric tone, high quality photo, no text, empty pitch",
         "A close-up view of dark green soccer pitch grass under stadium lights at night, cinematic lighting, blurry background, professional sports photography, no text",
         "An epic Champions League football stadium background at night, blue and violet neon lights, dark atmospheric, pitch level view, cinematic, no text",
         "A modern soccer arena background with intense matchday lighting, foggy atmosphere, dark aesthetics, 4k sports photo, no text"
