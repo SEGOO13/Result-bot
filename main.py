@@ -228,36 +228,6 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
 
 # === MODALS ===
 
-class Logo1Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 1"):
-    url = discord.ui.TextInput(
-        label="Ссылка на фото (URL)", 
-        placeholder="Отправьте лого в Discord -> Скопируйте ссылку на изображение", 
-        required=True
-    )
-
-    def __init__(self, start_view):
-        super().__init__()
-        self.start_view = start_view
-
-    async def on_submit(self, interaction: discord.Interaction):
-        self.start_view.logo1_url = self.url.value.strip()
-        await interaction.response.send_message("✅ Логотип Команды 1 сохранён!", ephemeral=True)
-
-class Logo2Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 2"):
-    url = discord.ui.TextInput(
-        label="Ссылка на фото (URL)", 
-        placeholder="Отправьте лого в Discord -> Скопируйте ссылку на изображение", 
-        required=True
-    )
-
-    def __init__(self, start_view):
-        super().__init__()
-        self.start_view = start_view
-
-    async def on_submit(self, interaction: discord.Interaction):
-        self.start_view.logo2_url = self.url.value.strip()
-        await interaction.response.send_message("✅ Логотип Команды 2 сохранён!", ephemeral=True)
-
 class MatchDataModal(discord.ui.Modal, title="📊 Статистика матча"):
     team1 = discord.ui.TextInput(label="Название Команды 1", placeholder="BAYER 04", required=True)
     team2 = discord.ui.TextInput(label="Название Команды 2", placeholder="VALENCIA", required=True)
@@ -325,17 +295,16 @@ class MatchResultView(discord.ui.View):
 
     @discord.ui.button(label="⭐ MVP Матча", style=discord.ButtonStyle.success, custom_id="btn_mvp")
     async def mvp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Ограничение прав: только админ может вызывать меню MVP
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ Только администраторы могут назначать MVP матча!", ephemeral=True)
             return
         await interaction.response.send_modal(MVPModal())
 
 class ResultStartView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, logo1_url: str = None, logo2_url: str = None):
         super().__init__(timeout=None)
-        self.logo1_url = None
-        self.logo2_url = None
+        self.logo1_url = logo1_url
+        self.logo2_url = logo2_url
         self.team1 = None
         self.score1 = None
         self.events1 = "-"
@@ -343,19 +312,11 @@ class ResultStartView(discord.ui.View):
         self.score2 = None
         self.events2 = "-"
 
-    @discord.ui.button(label="🛡️ Логотип 1", style=discord.ButtonStyle.secondary, custom_id="results_v2:btn_logo1", row=0)
-    async def btn_logo1(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(Logo1Modal(self))
-
-    @discord.ui.button(label="🛡️ Логотип 2", style=discord.ButtonStyle.secondary, custom_id="results_v2:btn_logo2", row=0)
-    async def btn_logo2(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(Logo2Modal(self))
-
     @discord.ui.button(label="📝 Статистика матча", style=discord.ButtonStyle.primary, custom_id="results_v2:btn_match_data", row=0)
     async def btn_match_data(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(MatchDataModal(self))
 
-    @discord.ui.button(label="🚀 Сгенерировать карточку", style=discord.ButtonStyle.success, custom_id="results_v2:btn_generate", row=1)
+    @discord.ui.button(label="🚀 Сгенерировать карточку", style=discord.ButtonStyle.success, custom_id="results_v2:btn_generate", row=0)
     async def btn_generate(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.team1 or not self.team2 or not self.score1 or not self.score2:
             await interaction.response.send_message("❌ Сначала заполните данные матча через кнопку **«📝 Статистика матча»**!", ephemeral=True)
@@ -396,21 +357,32 @@ class ResultStartView(discord.ui.View):
 
 # === BOT EVENTS & COMMANDS ===
 
-# ИЗМЕНЕНО: Убрана проверка @app_commands.checks.has_permissions(administrator=True)
-@bot.tree.command(name="result", description="Центр управления матчем RESULTS (Любой пользователь)")
-async def result(interaction: discord.Interaction):
+@bot.tree.command(name="result", description="Оформить матч RESULTS")
+@app_commands.describe(
+    logo1="Выберите файл логотипа Команды 1 из галереи",
+    logo2="Выберите файл логотипа Команды 2 из галереи"
+)
+async def result(
+    interaction: discord.Interaction, 
+    logo1: discord.Attachment = None, 
+    logo2: discord.Attachment = None
+):
+    logo1_url = logo1.url if logo1 else None
+    logo2_url = logo2.url if logo2 else None
+
     embed = discord.Embed(
         title="⚽ Центр управления RESULTS",
         description=(
-            "Заполните информацию о прошедшем матче перед публикацией:\n\n"
-            "1️⃣ **`🛡️ Логотип`** — отправьте эмблемы в Discord, скопируйте ссылки на них и вставьте.\n"
-            "2️⃣ **`📝 Статистика матча`** — введите название команд, счёт и авторов голов.\n"
-            "3️⃣ **`🚀 Сгенерировать карточку`** — создаст и отправит готовую карточку в чат (и сохранит в базу)!"
+            "Логотипы загружены!\n\n"
+            "1️⃣ Нажмите **`📝 Статистика матча`**, чтобы ввести названия команд, счёт и голы.\n"
+            "2️⃣ Нажмите **`🚀 Сгенерировать карточку`** для публикации!"
         ),
         color=discord.Color.blue()
     )
     embed.set_footer(text="RESULTS System v2.0")
-    await interaction.response.send_message(embed=embed, view=ResultStartView(), ephemeral=True)
+    
+    view = ResultStartView(logo1_url=logo1_url, logo2_url=logo2_url)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 @bot.tree.command(name="history", description="История последних сыгранных матчей RESULTS")
 async def history(interaction: discord.Interaction):
@@ -451,7 +423,7 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(
         name="🎮 Основные команды:",
         value=(
-            "• `/result` — Открывает интерактивное меню оформления матча (Любой пользователь).\n"
+            "• `/result` — Открывает интерактивное меню оформления матча (можно закрепить картинки из галереи).\n"
             "• `/history` — История последних сыгранных матчей.\n"
             "• `/help` — Показывает это меню со справкой."
         ),
