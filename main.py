@@ -396,8 +396,8 @@ class ResultStartView(discord.ui.View):
 
 # === BOT EVENTS & COMMANDS ===
 
-@bot.tree.command(name="result", description="Центр управления матчем RESULTS (Только для Администраторов)")
-@app_commands.checks.has_permissions(administrator=True)
+# ИЗМЕНЕНО: Убрана проверка @app_commands.checks.has_permissions(administrator=True)
+@bot.tree.command(name="result", description="Центр управления матчем RESULTS (Любой пользователь)")
 async def result(interaction: discord.Interaction):
     embed = discord.Embed(
         title="⚽ Центр управления RESULTS",
@@ -451,7 +451,7 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(
         name="🎮 Основные команды:",
         value=(
-            "• `/result` — Открывает интерактивное меню оформления матча (Только Админы).\n"
+            "• `/result` — Открывает интерактивное меню оформления матча (Любой пользователь).\n"
             "• `/history` — История последних сыгранных матчей.\n"
             "• `/help` — Показывает это меню со справкой."
         ),
