@@ -4,6 +4,7 @@ import asyncio
 import random
 import threading
 import sqlite3
+import textwrap
 from datetime import datetime
 from flask import Flask
 import aiohttp
@@ -78,50 +79,42 @@ async def fetch_image(url: str) -> Image.Image:
     if not url or not url.startswith("http"):
         return None
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        clean_url = url.split("?")[0] if "cdn.discordapp.com" in url or "media.discordapp.net" in url else url
+        if not (clean_url.endswith('.png') or clean_url.endswith('.jpg') or clean_url.endswith('.jpeg') or clean_url.endswith('.webp')):
+            clean_url = url
+
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as response:
+            async with session.get(clean_url, timeout=aiohttp.ClientTimeout(total=15)) as response:
                 if response.status == 200:
                     data = await response.read()
                     return Image.open(io.BytesIO(data)).convert("RGBA")
     except Exception as e:
-        print(f"Ошибка загрузки картинки: {e}")
+        print(f"Ошибка загрузки картинки ({url}): {e}")
     return None
 
 def draw_stadium_bg(width: int = 1000, height: int = 1000) -> Image.Image:
     """Генерация футбольной арены со случайными цветовыми темами"""
-    
-    # Наборы рандомных палитр (основной цвет, верхний прожектор, нижний отблеск)
     PALETTES = [
-        # Blue Stadium
         {"bg": (8, 15, 30, 255), "light1": (0, 142, 255, 180), "light2": (10, 160, 70, 160)},
-        # Purple Neon
         {"bg": (20, 10, 35, 255), "light1": (160, 32, 240, 180), "light2": (230, 0, 120, 150)},
-        # Champions Red
         {"bg": (30, 10, 15, 255), "light1": (240, 40, 40, 180), "light2": (255, 140, 0, 150)},
-        # Gold Champions
         {"bg": (25, 20, 10, 255), "light1": (245, 180, 0, 180), "light2": (180, 100, 0, 150)},
-        # Classic Teal/Grass
         {"bg": (5, 25, 20, 255), "light1": (0, 200, 160, 180), "light2": (15, 140, 60, 160)}
     ]
 
     theme = random.choice(PALETTES)
-
     bg = Image.new("RGBA", (width, height), theme["bg"])
     
-    # Слой света прожекторов
     light_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     ldraw = ImageDraw.Draw(light_layer)
     
-    # Прожекторы сверху и свечение снизу
     ldraw.ellipse((-150, -250, 1150, 550), fill=theme["light1"])
     ldraw.ellipse((-200, 550, 1200, 1200), fill=theme["light2"])
     
-    # Размытие света
     light_layer = light_layer.filter(ImageFilter.GaussianBlur(65))
     bg = Image.alpha_composite(bg, light_layer)
 
-    # Разметка поля (линии и круг)
     lines_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     lines_draw = ImageDraw.Draw(lines_layer)
     lines_draw.ellipse((200, 200, 800, 800), outline=(255, 255, 255, 80), width=4)
@@ -174,7 +167,6 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     frame_right = 950
     card_box = [(frame_left, 320), (frame_right, 950)]
     
-    # Полупрозрачная темная плашка под контент
     draw.rounded_rectangle(card_box, radius=30, fill=(8, 14, 26, 170), outline=(255, 255, 255, 180), width=4)
 
     # 1. Заголовок
@@ -193,20 +185,31 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
     # 5. Разделитель
     draw.line([(100, 640), (900, 640)], fill=(255, 255, 255, 80), width=2)
 
-    # 6. Голы
+    # 6. ВЫВОД ГОЛОВ И СОБЫТИЙ
     def draw_multiline_events(text, center_x, start_y):
-        lines = text.split(',')
+        if not text or text.strip() == "":
+            return
+        
+        raw_items = text.split(',')
+        lines = []
+        
+        for item in raw_items:
+            clean_item = item.strip()
+            if clean_item:
+                wrapped = textwrap.wrap(clean_item, width=22)
+                lines.extend(wrapped)
+                
         current_y = start_y
         for line in lines:
-            clean_line = line.strip()
-            if clean_line:
-                draw.text((center_x, current_y), clean_line, fill=(220, 220, 220), font=font_events, anchor="mm")
-                current_y += 30
+            if current_y > 920:
+                break
+            draw.text((center_x, current_y), line, fill=(220, 220, 220), font=font_events, anchor="mm")
+            current_y += 28
 
     draw_multiline_events(events1, 260, 675)
     draw_multiline_events(events2, 740, 675)
 
-    # 7. Логотипы
+    # 7. ЛОГОТИПЫ
     logo_size_val = 110
     logo_y_pos = 410 
 
@@ -228,7 +231,7 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
 class Logo1Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 1"):
     url = discord.ui.TextInput(
         label="Ссылка на фото (URL)", 
-        placeholder="Отправьте лого в Discord -> Скопируйте ссылку -> Вставьте сюда", 
+        placeholder="Отправьте лого в Discord -> Скопируйте ссылку на изображение", 
         required=True
     )
 
@@ -243,7 +246,7 @@ class Logo1Modal(discord.ui.Modal, title="🛡️ Аватарка Команд�
 class Logo2Modal(discord.ui.Modal, title="🛡️ Аватарка Команды 2"):
     url = discord.ui.TextInput(
         label="Ссылка на фото (URL)", 
-        placeholder="Отправьте лого в Discord -> Скопируйте ссылку -> Вставьте сюда", 
+        placeholder="Отправьте лого в Discord -> Скопируйте ссылку на изображение", 
         required=True
     )
 
@@ -322,6 +325,10 @@ class MatchResultView(discord.ui.View):
 
     @discord.ui.button(label="⭐ MVP Матча", style=discord.ButtonStyle.success, custom_id="btn_mvp")
     async def mvp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Ограничение прав: только админ может вызывать меню MVP
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Только администраторы могут назначать MVP матча!", ephemeral=True)
+            return
         await interaction.response.send_modal(MVPModal())
 
 class ResultStartView(discord.ui.View):
