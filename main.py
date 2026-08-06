@@ -76,16 +76,12 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 async def fetch_image(url: str) -> Image.Image:
-    if not url or not url.startswith("http"):
+    if not url:
         return None
     try:
-        clean_url = url.split("?")[0] if "cdn.discordapp.com" in url or "media.discordapp.net" in url else url
-        if not (clean_url.endswith('.png') or clean_url.endswith('.jpg') or clean_url.endswith('.jpeg') or clean_url.endswith('.webp')):
-            clean_url = url
-
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(clean_url, timeout=aiohttp.ClientTimeout(total=15)) as response:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as response:
                 if response.status == 200:
                     data = await response.read()
                     return Image.open(io.BytesIO(data)).convert("RGBA")
@@ -154,40 +150,40 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
 
     draw = ImageDraw.Draw(bg)
 
-    font_title = get_font(30)
+    font_title = get_font(28)
     font_team = get_font(30)
-    font_status = get_font(26)
-    font_events = get_font(20)
+    font_status = get_font(24)
+    font_events = get_font(18)
 
     score_text = f"{score1}  -  {score2}"
-    score_font_size = 95 if len(score_text) <= 7 else 65
+    score_font_size = 90 if len(score_text) <= 7 else 65
     font_score = get_font(score_font_size)
 
-    frame_left = 50
-    frame_right = 950
-    card_box = [(frame_left, 320), (frame_right, 950)]
+    frame_left = 70
+    frame_right = 930
+    card_box = [(frame_left, 320), (frame_right, 930)]
     
-    draw.rounded_rectangle(card_box, radius=30, fill=(8, 14, 26, 170), outline=(255, 255, 255, 180), width=4)
+    draw.rounded_rectangle(card_box, radius=30, fill=(8, 14, 26, 185), outline=(255, 255, 255, 180), width=4)
 
     # 1. Заголовок
-    draw.text((width // 2, 365), "RESULTS MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
+    draw.text((width // 2, 360), "RESULTS MATCHDAY", fill=(200, 200, 200), font=font_title, anchor="mm")
 
     # 2. Счёт
-    draw.text((width // 2, 460), score_text, fill=(255, 255, 255), font=font_score, anchor="mm")
+    draw.text((width // 2, 450), score_text, fill=(255, 255, 255), font=font_score, anchor="mm")
 
     # 3. Команды
-    draw.text((260, 560), team1.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
-    draw.text((740, 560), team2.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
+    draw.text((260, 540), team1.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
+    draw.text((740, 540), team2.upper(), fill=(255, 255, 255), font=font_team, anchor="mm")
 
     # 4. Статус
-    draw.text((width // 2, 600), "FULL-TIME", fill=(234, 179, 8), font=font_status, anchor="mm")
+    draw.text((width // 2, 580), "FULL-TIME", fill=(234, 179, 8), font=font_status, anchor="mm")
 
     # 5. Разделитель
-    draw.line([(100, 640), (900, 640)], fill=(255, 255, 255, 80), width=2)
+    draw.line([(110, 615), (890, 615)], fill=(255, 255, 255, 80), width=2)
 
     # 6. ВЫВОД ГОЛОВ И СОБЫТИЙ
     def draw_multiline_events(text, center_x, start_y):
-        if not text or text.strip() == "":
+        if not text or text.strip() in ["", "-"]:
             return
         
         raw_items = text.split(',')
@@ -196,22 +192,22 @@ def create_433_style_card(team1: str, score1: str, team2: str, score2: str,
         for item in raw_items:
             clean_item = item.strip()
             if clean_item:
-                wrapped = textwrap.wrap(clean_item, width=22)
+                wrapped = textwrap.wrap(clean_item, width=28)
                 lines.extend(wrapped)
                 
         current_y = start_y
         for line in lines:
-            if current_y > 920:
+            if current_y > 900:
                 break
-            draw.text((center_x, current_y), line, fill=(220, 220, 220), font=font_events, anchor="mm")
-            current_y += 28
+            draw.text((center_x, current_y), line, fill=(230, 230, 230), font=font_events, anchor="mm")
+            current_y += 24
 
-    draw_multiline_events(events1, 260, 675)
-    draw_multiline_events(events2, 740, 675)
+    draw_multiline_events(events1, 260, 645)
+    draw_multiline_events(events2, 740, 645)
 
-    # 7. ЛОГОТИПЫ
-    logo_size_val = 110
-    logo_y_pos = 410 
+    # 7. ОТОБРАЖЕНИЕ ЛОГОТИПОВ
+    logo_size_val = 120
+    logo_y_pos = 400
 
     if logo1_img:
         l1 = make_circle_logo(logo1_img, (logo_size_val, logo_size_val))
@@ -252,7 +248,7 @@ class MatchDataModal(discord.ui.Modal, title="📊 Статистика матч
         self.start_view.score2 = s2
         self.start_view.events1 = self.events1.value
         self.start_view.events2 = self.events2.value
-        await interaction.response.send_message("✅ Статистика матча успешно зафиксирована!", ephemeral=True)
+        await interaction.response.send_message("✅ Статистика матча зафиксирована!", ephemeral=True)
 
 class MVPModal(discord.ui.Modal, title="⭐ Назначение MVP Матча"):
     player_name = discord.ui.TextInput(label="Имя игрока (MVP)", placeholder="например: Pedri", required=True)
@@ -359,8 +355,8 @@ class ResultStartView(discord.ui.View):
 
 @bot.tree.command(name="result", description="Оформить матч RESULTS")
 @app_commands.describe(
-    logo1="Выберите файл логотипа Команды 1 из галереи",
-    logo2="Выберите файл логотипа Команды 2 из галереи"
+    logo1="Прикрепите логотип Команды 1 из галереи",
+    logo2="Прикрепите логотип Команды 2 из галереи"
 )
 async def result(
     interaction: discord.Interaction, 
@@ -373,8 +369,7 @@ async def result(
     embed = discord.Embed(
         title="⚽ Центр управления RESULTS",
         description=(
-            "Логотипы загружены!\n\n"
-            "1️⃣ Нажмите **`📝 Статистика матча`**, чтобы ввести названия команд, счёт и голы.\n"
+            "1️⃣ Нажмите **`📝 Статистика матча`**, чтобы ввести названия команд, счёт и авторов голов.\n"
             "2️⃣ Нажмите **`🚀 Сгенерировать карточку`** для публикации!"
         ),
         color=discord.Color.blue()
@@ -423,9 +418,9 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(
         name="🎮 Основные команды:",
         value=(
-            "• `/result` — Открывает интерактивное меню оформления матча (можно закрепить картинки из галереи).\n"
+            "• `/result` — Открывает меню оформления матча (можно прикрепить фотки из галереи).\n"
             "• `/history` — История последних сыгранных матчей.\n"
-            "• `/help` — Показывает это меню со справкой."
+            "• `/help` — Справка."
         ),
         inline=False
     )
